@@ -1,0 +1,16 @@
+[flake8]
+application_import_names = src, test
+import-order-style = google
+max-line-length = 120
+ignore =
+    E203,
+    E231
+    W503
+exclude =
+    build/
+    .git
+    __pycache__
+    .tox
+    venv/
+max-complexity = 10
+require-code = True
