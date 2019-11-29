@@ -24,6 +24,8 @@ from sagemaker_sklearn_extension.preprocessing import (
     quantile_transform_nonrandom,
 )
 
+np.random.seed(0)
+
 X_zeros = np.zeros((10, 10))
 X_extreme_vals = np.array(
     [
