@@ -4,8 +4,8 @@ phases:
   build:
     commands:
       - PACKAGE_FILE="$CODEBUILD_SRC_DIR_ARTIFACT_1/sagemaker-scikit-learn-extension-*.tar.gz"
-      - PYPI_USER=$(aws secretsmanager get-secret-value --secret-id /codebuild/pypi/test/user --query SecretString --output text)
-      - PYPI_PASSWORD=$(aws secretsmanager get-secret-value --secret-id /codebuild/pypi/test/password --query SecretString --output text)
+      - PYPI_USER=$(aws secretsmanager get-secret-value --secret-id /codebuild/pypi/user --query SecretString --output text)
+      - PYPI_PASSWORD=$(aws secretsmanager get-secret-value --secret-id /codebuild/pypi/password --query SecretString --output text)
 
       - echo 'md5sum of python package:'
       - md5sum $PACKAGE_FILE
