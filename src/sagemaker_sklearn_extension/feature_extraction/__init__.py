@@ -18,6 +18,7 @@ to extract features from text. This module is based on the
 :mod:`sklearn.feature_extraction` module.
 """
 
+from . import date_time
 from . import text
 
-__all__ = ["text"]
+__all__ = ["date_time", "text"]
