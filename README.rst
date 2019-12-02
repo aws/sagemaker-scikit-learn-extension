@@ -88,7 +88,7 @@ To run the tests with tox, run:
 Running on SageMaker
 --------------------
 
-To use sagemaker-sklearn-extension on SageMaker, you can build the `sagemaker-autopilot-container <https://github.com/aws/sagemaker-scikit-learn-container>`_.
+To use sagemaker-scikit-learn-extension on SageMaker, you can build the `sagemaker-scikit-learn-extension-container <https://github.com/aws/sagemaker-scikit-learn-container>`_.
 
 Overview of Submodules
 ----------------------
@@ -96,17 +96,23 @@ Overview of Submodules
 * :code:`sagemaker_sklearn_extension.decomposition`
    * :code:`RobustPCA` dimension reduction for dense and sparse inputs
 * :code:`sagemaker_sklearn_extension.externals`
-   * :code:`AutoMLTransformer` utility class encapsulating feature and target transformation functionality used in AutoML pipelines
+   * :code:`AutoMLTransformer` utility class encapsulating feature and target transformation functionality used in SageMaker Autopilot
    * :code:`Header` utility class to manage the header and target columns in tabular data
-   * :code:`read_csv_data` reads comma separated data and returns a numpy array
+   * :code:`read_csv_data` reads comma separated data and returns a numpy array (uses mlio)
+* :code:`sagemaker_sklearn_extension.feature_extraction.date_time`
+   * :code:`DateTimeVectorizer` convert datetime objects or strings into numeric features
 * :code:`sagemaker_sklearn_extension.feature_extraction.text`
-   * :code:`MultiColumnTfidfVectorizer` convert a many collections of raw documents to a matrix of TF-IDF features.
+   * :code:`MultiColumnTfidfVectorizer` convert collections of raw documents to a matrix of TF-IDF features
 * :code:`sagemaker_sklearn_extension.impute`
    * :code:`RobustImputer` imputer for missing values with customizable mask_function and multi-column constant imputation
    * :code:`RobustMissingIndicator` binary indicator for missing values with customizable mask_function
 * :code:`sagemaker_sklearn_extension.preprocessing`
-   * :code:`ExtremeValueTransformer` transformer for columns that contain "extreme" values (columns that are heavy tailed)
+   * :code:`BaseExtremeValuesTransformer` customizable transformer for columns that contain "extreme" values (columns that are heavy tailed)
+   * :code:`LogExtremeValuesTransformer` stateful log transformer for columns that contain "extreme" values (columns that are heavy tailed)
+   * :code:`NALabelEncoder` encoder for transforming labels to NA values
    * :code:`QuadraticFeatures` generate and add quadratic features to feature matrix
+   * :code:`QuantileExtremeValuesTransformer` stateful quantiles transformer for columns that contain "extreme" values (columns that are he
    * :code:`ThresholdOneHotEncoder` encode categorical integer features as a one-hot numeric array, with optional restrictions on feature encoding
+   * :code:`RemoveConstantColumnsTransformer` removes constant columns
    * :code:`RobustLabelEncoder` encode labels for seen and unseen labels
    * :code:`RobustStandardScaler` standardization for dense and sparse inputs
