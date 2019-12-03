@@ -11,4 +11,4 @@ phases:
       - md5sum $PACKAGE_FILE
 
       # publish to pypi
-      - twine upload --repository-url https://test.pypi.org/legacy/ $PACKAGE_FILE -u $PYPI_USER -p $PYPI_PASSWORD
+      - twine upload $PACKAGE_FILE -u $PYPI_USER -p $PYPI_PASSWORD

@@ -10,7 +10,7 @@ phases:
       - pip install tox tox-conda
 
       # prepare release
-      - git-release --prepare
+      - git-release --prepare --min-version 1.0.0
 
       # run linters
       - tox -e flake8,pylint
@@ -28,7 +28,7 @@ phases:
       - python3 setup.py sdist
 
       # publish release to github
-      - git-release --publish
+      - git-release --publish --min-version 1.0.0
 
 artifacts:
   files:
