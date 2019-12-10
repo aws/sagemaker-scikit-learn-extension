@@ -17,7 +17,10 @@ import scipy.sparse as sp
 
 from sklearn.utils.testing import assert_array_equal
 
-from sagemaker_sklearn_extension.preprocessing import NALabelEncoder, RobustLabelEncoder, ThresholdOneHotEncoder
+from sagemaker_sklearn_extension.preprocessing import NALabelEncoder
+from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
+from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
+from sagemaker_sklearn_extension.preprocessing import RobustOrdinalEncoder
 
 
 X = np.array([["hot dog", 1], ["hot dog", 1], ["apple", 2], ["hot dog", 3], ["hot dog", 1], ["banana", 3]])
@@ -32,6 +35,19 @@ X_expected_dense = [
     [0.0, 0.0, 1.0],
 ]
 X_expected_max_one_dense = [[1.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]
+
+
+ordinal_data = np.array(
+    [
+        ["hot dog", 1, "?"],
+        ["hot dog", 1, "a"],
+        ["apple", 2, "b"],
+        ["hot dog", 3, "a"],
+        ["hot dog", 1, "b"],
+        ["banana", 3, "a"],
+    ]
+)
+ordinal_expected_categories_ = [{"hot dog", "apple", "banana"}, {"1", "2", "3"}, {"?", "a", "b"}]
 
 
 @pytest.mark.parametrize(
@@ -155,3 +171,41 @@ def test_na_label_encoder(y, y_expected):
     na_label_encoder.fit(y)
     y_transform = na_label_encoder.transform(y)
     assert_array_equal(y_transform, y_expected)
+
+
+def test_robust_ordinal_encoding_categories():
+    encoder = RobustOrdinalEncoder()
+    encoder.fit(ordinal_data)
+    for i, cat in enumerate(encoder.categories_):
+        assert set(cat) == set(ordinal_expected_categories_[i])
+
+
+def test_robust_ordinal_encoding_transform():
+    encoder = RobustOrdinalEncoder()
+    encoder.fit(ordinal_data)
+    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
+    encoded = encoder.transform(test_data)
+    assert all(list((encoded[:-1] < 3).reshape((-1,))))
+    assert all(list(encoded[-1] == 3))
+
+
+def test_robust_ordinal_encoding_inverse_transform():
+    encoder = RobustOrdinalEncoder()
+    encoder.fit(ordinal_data)
+    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
+    encoded = encoder.transform(test_data)
+    reverse = encoder.inverse_transform(encoded)
+    assert np.array_equal(ordinal_data, reverse[:-1])
+    assert all([x is None for x in reverse[-1]])
+
+
+def test_robust_ordinal_encoding_inverse_transform_floatkeys():
+    encoder = RobustOrdinalEncoder()
+    data = np.arange(9).astype(np.float32).reshape((3, 3))
+    encoder.fit(data)
+    test_data = data + 3
+    encoded = encoder.transform(test_data)
+    reverse = encoder.inverse_transform(encoded)
+    assert reverse.dtype == object
+    assert np.array_equal(data[1:], reverse[:-1])
+    assert all([x is None for x in reverse[-1]])
