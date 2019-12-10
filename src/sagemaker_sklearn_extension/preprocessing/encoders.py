@@ -17,9 +17,9 @@ from math import ceil
 import numpy as np
 
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder
 from sklearn.preprocessing.label import _encode, _encode_check_unknown
-from sklearn.utils.validation import check_is_fitted, column_or_1d, _num_samples
+from sklearn.utils.validation import check_is_fitted, column_or_1d, _num_samples, check_array
 from sagemaker_sklearn_extension.impute import RobustImputer
 
 
@@ -423,3 +423,160 @@ class NALabelEncoder(BaseEstimator, TransformerMixin):
 
     def _more_tags(self):
         return {"X_types": ["1dlabels"]}
+
+
+class RobustOrdinalEncoder(OrdinalEncoder):
+    """Encode categorical features as an integer array.
+
+    The input to this transformer should be an 2d array-like table of items describing categorical data. Each columns
+    will have it's items converted to ordinal integers. A column with n unique values will have it's items converted to
+    the integers 0 to n-1. During transform, items that were not observed during fit will be converted to the integer n
+
+    Similar to ``sklearn.preprocessing.OrdinalEncoder`` with the additional feature of handling unseen values.
+
+    Parameters
+    ----------
+    categories : 'auto' or a list of lists/arrays of values.
+        Categories (unique values) per feature:
+
+        - 'auto' : Determine categories automatically from the training data.
+        - list : ``categories[i]`` holds the categories expected in the ith
+          column. The passed categories should not mix strings and numeric
+          values, and should be sorted in case of numeric values.
+
+        The used categories can be found in the ``categories_`` attribute.
+
+    dtype : number type, default np.float32
+        Desired dtype of output.
+
+    Attributes
+    ----------
+    categories_ : list of arrays
+        The categories of each feature determined during fitting
+        (in order of the features in X and corresponding with the output
+        of ``transform``).
+
+    Examples
+    --------
+    Given a dataset with two features, we let the encoder find the unique
+    values per feature and transform the data to an ordinal encoding.
+
+    >>> from sagemaker_sklearn_extension.preprocessing import RobustOrdinalEncoder
+    >>> enc = RobustOrdinalEncoder()
+    >>> X = [['Male', 1], ['Female', 3], ['Female', 2]]
+    >>> enc.fit(X)
+    RobustOrdinalEncoder(categories='auto', dtype=<... 'numpy.float32'>)
+    >>> enc.categories_
+    [array(['Female', 'Male'], dtype=object), array([1, 2, 3], dtype=object)]
+    >>> enc.transform([['Female', 3], ['Male', 1], ['Other', 15]])
+    array([[0., 2.],
+           [1., 0.],
+           [2., 3.]], dtype=float32)
+
+    >>> enc.inverse_transform([[1, 0], [0, 1], [2, 3]])
+    array([['Male', 1],
+           ['Female', 2],
+           [None, None]], dtype=object)
+
+    """
+
+    def __init__(self, categories="auto", dtype=np.float32):
+        super(RobustOrdinalEncoder, self).__init__(categories, dtype)
+        self.categories = categories
+        self.dtype = dtype
+
+    def fit(self, X, y=None):
+        """Fit the OrdinalEncoder to X.
+
+        Parameters
+        ----------
+        X : array-like, shape [n_samples, n_features]
+            The data to determine the categories of each feature.
+
+        Returns
+        -------
+        self
+
+        """
+        # sklearn.preprocessing._BaseEncoder uses _categories due to deprecations in other classes
+        # can be removed once deprecations are removed
+        self._categories = self.categories
+        self._fit(X, handle_unknown="unknown")
+        return self
+
+    def transform(self, X):
+        """Transform X to ordinal codes.
+
+        Parameters
+        ----------
+        X : array-like, shape [n_samples, n_features]
+            The data to encode.
+
+        Returns
+        -------
+        X_out : sparse matrix or a 2-d array
+            Transformed input.
+
+        """
+        X_int, X_mask = self._transform(X, handle_unknown="unknown")
+        # assign the unknowns an integer indicating they are unknown. The largest integer is always reserved for
+        # unknowns
+        for col in range(X_int.shape[1]):
+            mask = X_mask[:, col]
+            X_int[~mask, col] = self.categories_[col].shape[0]
+
+        return X_int.astype(self.dtype, copy=False)
+
+    def inverse_transform(self, X):
+        """Convert the data back to the original representation.
+        In slots where the encoding is that of an unrecognised category, the output of the inverse transform is np.nan
+        for float or complex arrays, and None otherwise
+
+        Parameters
+        ----------
+        X : array-like or sparse matrix, shape [n_samples, n_encoded_features]
+            The transformed data.
+
+        Returns
+        -------
+        X_tr : array-like, shape [n_samples, n_features]
+            Inverse transformed array.
+
+        Notes
+        -----
+        Most of the logic is copied from OrdinalEncoder.inverse_transform. The change is in handling unknown values.
+
+        """
+        check_is_fitted(self, "categories_")
+        X = check_array(X, accept_sparse="csr", dtype="numeric")
+
+        n_samples, _ = X.shape
+        n_features = len(self.categories_)
+
+        # validate shape of passed X
+        msg = "Shape of the passed X data is not correct. Expected {0} " "columns, got {1}."
+        if X.shape[1] != n_features:
+            raise ValueError(msg.format(n_features, X.shape[1]))
+
+        # create resulting array of appropriate dtype
+        dt = np.find_common_type([cat.dtype for cat in self.categories_], [])
+        X_tr = np.empty((n_samples, n_features), dtype=dt)
+
+        found_unknown = {}
+        for i in range(n_features):
+            labels = X[:, i].astype("int64", copy=False)
+            known_mask = labels != self.categories_[i].shape[0]
+            labels *= known_mask
+            X_tr[:, i] = self.categories_[i][labels]
+            if not np.all(known_mask):
+                found_unknown[i] = ~known_mask
+
+        # if unknown are found cast to an object array and transform the missing values to None
+        if found_unknown:
+            if X_tr.dtype != object:
+                X_tr = X_tr.astype(object)
+
+            for idx, unknown_mask in found_unknown.items():
+                X_tr[unknown_mask, idx] = None
+
+        return X_tr
