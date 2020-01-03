@@ -16,14 +16,14 @@ To install,
     # install from pip
     pip install sagemaker-scikit-learn-extension
 
-In order to use the I/O functionalies in the :code:`sagemaker_sklearn_extension.externals` module, you will also need to install the :code:`mlio` package via conda. The :code:`mlio` package is only available through conda at the moment.
+In order to use the I/O functionalies in the :code:`sagemaker_sklearn_extension.externals` module, you will also need to install the :code:`mlio` version 0.2.7 package via conda. The :code:`mlio` package is only available through conda at the moment.
 
 To install :code:`mlio`,
 
 ::
 
     # install mlio
-    conda install -c mlio -c conda-forge mlio-py
+    conda install -c mlio -c conda-forge mlio-py==0.2.7
 
 You can also install from source by cloning this repository and running a ``pip install`` command in the root directory of the repository:
 
@@ -77,7 +77,7 @@ You can install the libraries needed to run the tests by running :code:`pip inst
 
 For unit tests, tox will use pytest to run the unit tests in a Python 3.7 interpreter. tox will also run flake8 and pylint for style checks.
 
-conda is needed because of the dependency on mlio.
+conda is needed because of the dependency on mlio 0.2.7.
 
 To run the tests with tox, run:
 
