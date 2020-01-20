@@ -122,7 +122,7 @@ class ThresholdOneHotEncoder(OneHotEncoder):
 
         for j in range(n_features):
             # get unique values and their counts
-            items, counts = np.unique([row[j] for row in X], return_counts=True)
+            items, counts = np.unique([X[:, j]], return_counts=True)
 
             # add items that appear more than threshold times
             self.categories_[j] = items[counts >= threshold].astype("O")
