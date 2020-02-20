@@ -1,6 +1,18 @@
 SageMaker Scikit-Learn Extension
 ================================
 
+.. image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
+   :target: https://opensource.org/licenses/Apache-2.0
+   :alt: License
+
+.. image:: https://img.shields.io/pypi/v/sagemaker-scikit-learn-extension.svg
+   :target: https://pypi.python.org/pypi/sagemaker-scikit-learn-extension
+   :alt: Latest Version
+
+.. image:: https://img.shields.io/badge/code_style-black-000000.svg
+   :target: https://github.com/python/black
+   :alt: Code style: black
+
 SageMaker Scikit-Learn Extension is a Python module for machine learning built on top of `scikit-learn <https://scikit-learn.org>`_.
 
 This project contains standalone scikit-learn estimators and additional tools to support SageMaker Autopilot. Many of the additional estimators are based on existing scikit-learn estimators.
