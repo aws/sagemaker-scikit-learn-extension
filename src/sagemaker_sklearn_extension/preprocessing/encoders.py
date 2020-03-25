@@ -153,6 +153,20 @@ class ThresholdOneHotEncoder(OneHotEncoder):
 
         return self
 
+    def fit_transform(self, X, y=None):
+        # This method is overloaded here in order to fix a minor bug in OneHotEncoder. See the last line of this method
+        self._validate_keywords()
+
+        self._handle_deprecations(X)
+
+        if self._legacy_mode:
+            return super()._transform_selected(
+                X, self._legacy_fit_transform, self.dtype,
+                self._categorical_features, copy=True)
+        else:
+            # The y was added to fit. In OneHotEncoder the next line is: return self.fit(X).transform(X)
+            return self.fit(X, y).transform(X)
+
     def _more_tags(self):
         return {"X_types": ["categorical"]}
 
