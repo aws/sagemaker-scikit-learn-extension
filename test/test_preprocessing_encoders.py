@@ -148,6 +148,13 @@ def test_robust_label_encoder_sorted_labels(labels):
     assert_array_equal(list(enc.classes_), labels)
     assert_array_equal(enc.transform([labels[2], labels[1], "173"]), [2, 1, 3])
 
+    # Test that fit_transform has the same behavior
+    enc = RobustLabelEncoder(labels=labels)
+    y_transformed = enc.fit_transform([labels[2], labels[1], "173"])
+
+    assert_array_equal(list(enc.classes_), labels)
+    assert_array_equal(y_transformed, [2, 1, 3])
+
 
 @pytest.mark.parametrize("labels", (["-12", "9", "3"], ["-12.", "9.", "3."]))
 def test_robust_label_encoder_unsorted_labels_warning(labels):
@@ -157,6 +164,29 @@ def test_robust_label_encoder_unsorted_labels_warning(labels):
 
     assert_array_equal(list(enc.classes_), sorted(labels))
     assert_array_equal(enc.transform([labels[1], labels[2], "173"]), [2, 1, 3])
+
+    # Test that fit_transform has the same behavior
+    enc = RobustLabelEncoder(labels=labels)
+    with pytest.warns(UserWarning):
+        y_transformed = enc.fit_transform([labels[1], labels[2], "173"])
+
+    assert_array_equal(list(enc.classes_), sorted(labels))
+    assert_array_equal(y_transformed, [2, 1, 3])
+
+
+def test_robust_label_encoder_fill_label_value():
+    y = np.array([1, 1, 0, 1, 1])
+    enc = RobustLabelEncoder(labels=[1], fill_label_value=0)
+    enc.fit(y)
+    y_transform = enc.transform(y)
+    assert_array_equal(y_transform, [0, 0, 1, 0, 0])
+    assert_array_equal(enc.inverse_transform(y_transform), y)
+
+    # Test that fit_transform has the same behavior
+    enc = RobustLabelEncoder(labels=[1], fill_label_value=0)
+    y_transform = enc.fit_transform(y)
+    assert_array_equal(y_transform, [0, 0, 1, 0, 0])
+    assert_array_equal(enc.inverse_transform(y_transform), y)
 
 
 @pytest.mark.parametrize(
