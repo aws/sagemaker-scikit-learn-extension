@@ -278,8 +278,6 @@ class RobustLabelEncoder(LabelEncoder):
     def fit_transform(self, y):
         """Fit label encoder and return encoded labels.
 
-        ``fill_unseen_labels=True`` does nothing in ``fit_transform`` because there will be no unseen labels.
-
         Parameters
         ----------
         y : array-like of shape [n_samples]
@@ -290,12 +288,7 @@ class RobustLabelEncoder(LabelEncoder):
         y_encoded : array-like of shape [n_samples]
                     Encoded label values.
         """
-        y = column_or_1d(y, warn=True)
-        sorted_labels = self._check_labels_and_sort()
-        self.classes_, y_encoded = (
-            _encode(y, uniques=sorted_labels, encode=True) if sorted_labels else _encode(y, encode=True)
-        )
-        return y_encoded
+        return self.fit(y).transform(y)
 
     def transform(self, y):
         """Transform labels to normalized encoding.
