@@ -52,14 +52,14 @@ def _get_data(source):
     """Determines the input mode of the source and returns a InMemoryStore, SageMakerPipe, or File object
     based on the input mode.
 
-    If source is a python buffer, a mlio.core.InMemoryStore will be returned.
+    If source is a python buffer, a mlio.InMemoryStore will be returned.
 
     If SM_INPUT_DATA_CONFIG environment variable is not defined, source is assumed to be a file or directory and a
-    mlio.core.File object will be returned.
+    mlio.File object will be returned.
 
     If SM_INPUT_DATA_CONFIG environment variable is defined, source can be the name of the channel in
     SM_INPUT_DATA_CONFIG. If the source is a path, it is assumed that the basename of the path is the name of the
-    channel. The type of mlio.core object to be returned will be based on the "TrainingInputMode" of the channel.
+    channel. The type of mlio object to be returned will be based on the "TrainingInputMode" of the channel.
 
     Here is an example of SM_INPUT_DATA_CONFIG with two channels ("code" and "train").
     SM_INPUT_DATA_CONFIG=
@@ -86,23 +86,23 @@ def _get_data(source):
 
     Returns
     -------
-    mlio.core.File:
-        A mlio.core.File object is return based on the file or directory described by the `source`.
+    mlio.File:
+        A mlio.File object is return based on the file or directory described by the `source`.
 
-    mlio.core.SageMakerPipe:
+    mlio.SageMakerPipe:
         In SageMaker framework containers, the inputdataconfig.json is made available via environment
         variable 'SM_INPUT_DATA_CONFIG'. When the given source is a to 'Pipe' the value of the
         environment variable 'SM_INPUT_DATA_CONFIG' is used to read out the 'TrainingInputMode' and
         confirm that the source is a 'Pipe'. Then a `mlio.SageMakerPipe` object is created using the
         'source' and returned.
 
-    mlio.core.InMemoryStore:
+    mlio.InMemoryStore:
         Given the `source` is a Python buffer, a mlio.InMemoryStore object is created and returned
     """
     if isinstance(source, bytes):
         return [mlio.InMemoryStore(source)]
 
-    if isinstance(source, mlio.core.File):
+    if isinstance(source, mlio.File):
         source = source.id
 
     config = os.environ.get("SM_INPUT_DATA_CONFIG")
@@ -151,13 +151,13 @@ def _get_reader(source, batch_size):
        mlio.CsvReader
            CsvReader configured with a SageMaker Pipe, File or InMemory buffer
        """
-    return mlio.CsvReader(
-        dataset=_get_data(source),
-        batch_size=batch_size,
-        default_data_type=mlio.DataType.STRING,
-        header_row_index=None,
-        allow_quoted_new_lines=True,
+    data_reader_params = mlio.DataReaderParams(
+        dataset=_get_data(source), batch_size=batch_size, warn_bad_instances=False
     )
+    csv_params = mlio.CsvParams(
+        default_data_type=mlio.DataType.STRING, header_row_index=None, allow_quoted_new_lines=True
+    )
+    return mlio.CsvReader(data_reader_params=data_reader_params, csv_params=csv_params)
 
 
 class AbstractBatchConsumer(ABC):
