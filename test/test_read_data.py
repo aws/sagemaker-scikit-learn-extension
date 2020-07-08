@@ -21,9 +21,9 @@ import os
 import pytest
 
 from mlio import list_files
-from mlio.core import InMemoryStore, SageMakerPipe
-from mlio.core import InvalidInstanceError
-from mlio.core import File as mlio_file
+from mlio import InMemoryStore, SageMakerPipe
+from mlio import InvalidInstanceError
+from mlio import File as mlio_file
 from sagemaker_sklearn_extension.externals.read_data import _convert_megabytes_to_bytes
 from sagemaker_sklearn_extension.externals.read_data import _get_data
 from sagemaker_sklearn_extension.externals.read_data import _get_reader
@@ -124,7 +124,7 @@ def test_get_reader_file_mode():
 
 
 def test_get_reader_mlio_file_object():
-    """Test for getting a 'CsvReader' with a mlio.core.File object source"""
+    """Test for getting a 'CsvReader' with a mlio.File object source"""
     source = "test/data/csv/mock_datasplitter_output"
     files = list_files(source, pattern="*")
     reader = _get_data(source=files[0])
@@ -170,7 +170,7 @@ def test_get_reader_error_malformed_channel_cfg(cfg, expected_error):
 
 def test_get_reader_incorrect_path():
     """Test for reading from a path that doesn't exist"""
-    with pytest.raises(RuntimeError):
+    with pytest.raises(FileNotFoundError):
         _get_reader(source="incorrect", batch_size=100)
 
 

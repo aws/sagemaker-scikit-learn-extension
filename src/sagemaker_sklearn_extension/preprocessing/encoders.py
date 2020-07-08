@@ -85,8 +85,8 @@ class ThresholdOneHotEncoder(OneHotEncoder):
         the transformed features will be retained.
     """
 
-    def __init__(self, categories=None, drop=None, sparse=True, dtype=np.float64, threshold=None, max_categories=100):
-        super().__init__(None, None, categories, drop, sparse, dtype, "ignore")
+    def __init__(self, categories="auto", drop=None, sparse=True, dtype=np.float64, threshold=None, max_categories=100):
+        super().__init__(categories=categories, drop=drop, sparse=sparse, dtype=dtype, handle_unknown="ignore")
         self.threshold = threshold
         self.max_categories = max_categories
 
@@ -154,17 +154,9 @@ class ThresholdOneHotEncoder(OneHotEncoder):
         return self
 
     def fit_transform(self, X, y=None):
-        # This method is overloaded here in order to fix a minor bug in OneHotEncoder. See the last line of this method
         self._validate_keywords()
 
-        self._handle_deprecations(X)
-
-        if self._legacy_mode:
-            return super()._transform_selected(
-                X, self._legacy_fit_transform, self.dtype, self._categorical_features, copy=True
-            )
-        # The y was added to fit. In OneHotEncoder the next line is: return self.fit(X).transform(X)
-        return self.fit(X, y).transform(X)
+        return super().fit_transform(X, y)
 
     def _more_tags(self):
         return {"X_types": ["categorical"]}
