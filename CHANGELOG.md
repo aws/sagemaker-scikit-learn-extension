@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.1 (2020-07-21)
+
+### Bug fixes and other changes
+
+ * Merge pull request #18 from ipanepen/rle-bug
+ * test data reading when n_rows = 1 mod batch_size
+ * bug fix: makes fit_transform behavior consistent with fit and transform
+ * fix a minor bug in OneHotEncoder by by overloading the buggy method in ThresholdOneHotEncoder and fixing it
+
 ## v1.1.0 (2020-02-24)
 
 ### Features
