@@ -211,22 +211,27 @@ def test_robust_ordinal_encoding_categories():
 
 
 def test_robust_ordinal_encoding_transform():
-    encoder = RobustOrdinalEncoder()
-    encoder.fit(ordinal_data)
-    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
-    encoded = encoder.transform(test_data)
-    assert all(list((encoded[:-1] < 3).reshape((-1,))))
-    assert all(list(encoded[-1] == 3))
+    for unknown_as_nan in [True, False]:
+        encoder = RobustOrdinalEncoder(unknown_as_nan=unknown_as_nan)
+        encoder.fit(ordinal_data)
+        test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, np.nan]])], axis=0)
+        encoded = encoder.transform(test_data)
+        assert all(list((encoded[:-1] < 3).reshape((-1,))))
+        if unknown_as_nan:
+            assert all(list(np.isnan(encoded[-1])))
+        else:
+            assert all(list(encoded[-1] == 3))
 
 
 def test_robust_ordinal_encoding_inverse_transform():
-    encoder = RobustOrdinalEncoder()
-    encoder.fit(ordinal_data)
-    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
-    encoded = encoder.transform(test_data)
-    reverse = encoder.inverse_transform(encoded)
-    assert np.array_equal(ordinal_data, reverse[:-1])
-    assert all([x is None for x in reverse[-1]])
+    for unknown_as_nan in [True, False]:
+        encoder = RobustOrdinalEncoder(unknown_as_nan=unknown_as_nan)
+        encoder.fit(ordinal_data)
+        test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
+        encoded = encoder.transform(test_data)
+        reverse = encoder.inverse_transform(encoded)
+        assert np.array_equal(ordinal_data, reverse[:-1])
+        assert all([x is None for x in reverse[-1]])
 
 
 def test_robust_ordinal_encoding_inverse_transform_floatkeys():
