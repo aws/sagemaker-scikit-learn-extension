@@ -233,20 +233,29 @@ class RobustLabelEncoder(LabelEncoder):
     fill_label_value : str (default = '<unseen_label>')
         Replacement value for unseen encoded labels during ``inverse_transform``.
 
+    include_unseen_class: boolean (default = False)
+        Whether or not ``fill_label_value`` should be included as a class.
+
     Attributes
     ----------
     classes_ : array of shape (n_classes,)
-        Holds the label for each class.
+        Holds the label for each class that is seen when the encoder is ``fit``.
     """
 
     def __init__(
-        self, labels=None, fill_unseen_labels=True, fill_encoded_label_value=None, fill_label_value="<unseen_label>"
+        self,
+        labels=None,
+        fill_unseen_labels=True,
+        fill_encoded_label_value=None,
+        fill_label_value="<unseen_label>",
+        include_unseen_class=False,
     ):
         super().__init__()
         self.labels = labels
         self.fill_unseen_labels = fill_unseen_labels
         self.fill_encoded_label_value = fill_encoded_label_value
         self.fill_label_value = fill_label_value
+        self.include_unseen_class = include_unseen_class
 
     def fit(self, y):
         """Fit label encoder.
@@ -360,6 +369,19 @@ class RobustLabelEncoder(LabelEncoder):
 
         y_decoded = [self.classes_[idx] if idx in labels else self.fill_label_value for idx in y]
         return y_decoded
+
+    def get_classes(self):
+        """Returns the values of the unencoded classes.
+        If ``self.include_unseen_class`` is ``True`` include ``self.fill_label_value`` as a class.
+
+        Returns
+        -------
+        classes : array of shape (n_classes,)
+        """
+        if not self.include_unseen_class or not self.fill_unseen_labels:
+            return self.classes_
+
+        return self.classes_ + [self.fill_label_value]
 
 
 class NALabelEncoder(BaseEstimator, TransformerMixin):
