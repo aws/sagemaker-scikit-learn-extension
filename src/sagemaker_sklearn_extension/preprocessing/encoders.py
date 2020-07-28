@@ -378,10 +378,10 @@ class RobustLabelEncoder(LabelEncoder):
         -------
         classes : array of shape (n_classes,)
         """
-        if not self.include_unseen_class or not self.fill_unseen_labels:
-            return self.classes_
+        if self.include_unseen_class and self.fill_unseen_labels:
+            return np.append(self.classes_, [self.fill_label_value])
 
-        return np.append(self.classes_, [self.fill_label_value])
+        return self.classes_
 
 
 class NALabelEncoder(BaseEstimator, TransformerMixin):
