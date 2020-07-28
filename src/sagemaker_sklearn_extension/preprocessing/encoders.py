@@ -381,7 +381,7 @@ class RobustLabelEncoder(LabelEncoder):
         if not self.include_unseen_class or not self.fill_unseen_labels:
             return self.classes_
 
-        return self.classes_ + [self.fill_label_value]
+        return np.append(self.classes_, [self.fill_label_value])
 
 
 class NALabelEncoder(BaseEstimator, TransformerMixin):
