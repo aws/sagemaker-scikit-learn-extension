@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.0 (2020-07-29)
+
+### Features
+
+ * adds a `get_classes` method to `RobustLabelEncoder`
+
 ## v1.1.1 (2020-07-21)
 
 ### Bug fixes and other changes
