@@ -458,8 +458,8 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
     The input should be a 2D, array-like input of categorical features. Each column of categorical features will be
     converted to ordinal integers. For a given column of n unique values, seen values will be mapped to integers 0 to
-    n-1 and unseen values will be mapped to integer n. An unseen value is a value that was passed in during the
-    transform step, but not present in the fit step input.
+    n-1 and unseen values will be mapped to the integer n (or to np.nan when unknown_as_nan is True). An unseen value
+    is a value that was passed in during the transform step, but not present in the fit step input.
     This encoder supports inverse_transform, transforming ordinal integers back into categorical features. Unknown
     integers are transformed to None.
 
@@ -479,6 +479,11 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
     dtype : number type, default np.float32
         Desired dtype of output.
+
+    unknown_as_nan : boolean, default False
+        When unknown_as_nan is false, unknown values are transformed to n, where n-1 is the last category
+        When unknown_as_nan is true, unknown values are transformed to np.nan
+
 
     Attributes
     ----------
@@ -515,10 +520,11 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
     """
 
-    def __init__(self, categories="auto", dtype=np.float32):
+    def __init__(self, categories="auto", dtype=np.float32, unknown_as_nan=False):
         super(RobustOrdinalEncoder, self).__init__(categories, dtype)
         self.categories = categories
         self.dtype = dtype
+        self.unknown_as_nan = unknown_as_nan
 
     def fit(self, X, y=None):
         """Fit the RobustOrdinalEncoder to X.
@@ -554,13 +560,19 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
         """
         X_int, X_mask = self._transform(X, handle_unknown="unknown")
-        # assign the unknowns an integer indicating they are unknown. The largest integer is always reserved for
-        # unknowns
-        for col in range(X_int.shape[1]):
-            mask = X_mask[:, col]
-            X_int[~mask, col] = self.categories_[col].shape[0]
+        if self.unknown_as_nan:
+            # assign the unknowns np.nan
+            X_int = X_int.astype(self.dtype, copy=False)
+            X_int[~X_mask] = np.nan
+        else:
+            # assign the unknowns an integer indicating they are unknown. The largest integer is always reserved for
+            # unknowns
+            for col in range(X_int.shape[1]):
+                mask = X_mask[:, col]
+                X_int[~mask, col] = self.categories_[col].shape[0]
+            X_int = X_int.astype(self.dtype, copy=False)
 
-        return X_int.astype(self.dtype, copy=False)
+        return X_int
 
     def inverse_transform(self, X):
         """Convert the data back to the original representation.
@@ -584,7 +596,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
         """
         check_is_fitted(self, "categories_")
-        X = check_array(X, dtype="numeric")
+        X = check_array(X, dtype="numeric", force_all_finite="allow-nan" if self.unknown_as_nan else True)
 
         n_samples, _ = X.shape
         n_features = len(self.categories_)
@@ -601,7 +613,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         found_unknown = {}
         for i in range(n_features):
             labels = X[:, i].astype("int64", copy=False)
-            known_mask = labels != self.categories_[i].shape[0]
+            known_mask = np.isfinite(X[:, i]) if self.unknown_as_nan else (labels != self.categories_[i].shape[0])
             labels *= known_mask
             X_tr[:, i] = self.categories_[i][labels]
             if not np.all(known_mask):

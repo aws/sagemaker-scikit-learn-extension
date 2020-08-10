@@ -222,17 +222,22 @@ def test_robust_ordinal_encoding_categories():
         assert set(cat) == set(ordinal_expected_categories_[i])
 
 
-def test_robust_ordinal_encoding_transform():
-    encoder = RobustOrdinalEncoder()
+@pytest.mark.parametrize("unknown_as_nan", (True, False))
+def test_robust_ordinal_encoding_transform(unknown_as_nan):
+    encoder = RobustOrdinalEncoder(unknown_as_nan=unknown_as_nan)
     encoder.fit(ordinal_data)
-    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
+    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, np.nan]])], axis=0)
     encoded = encoder.transform(test_data)
     assert all(list((encoded[:-1] < 3).reshape((-1,))))
-    assert all(list(encoded[-1] == 3))
+    if unknown_as_nan:
+        assert all(list(np.isnan(encoded[-1])))
+    else:
+        assert all(list(encoded[-1] == 3))
 
 
-def test_robust_ordinal_encoding_inverse_transform():
-    encoder = RobustOrdinalEncoder()
+@pytest.mark.parametrize("unknown_as_nan", (True, False))
+def test_robust_ordinal_encoding_inverse_transform(unknown_as_nan):
+    encoder = RobustOrdinalEncoder(unknown_as_nan=unknown_as_nan)
     encoder.fit(ordinal_data)
     test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, None]])], axis=0)
     encoded = encoder.transform(test_data)
