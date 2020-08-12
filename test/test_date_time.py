@@ -14,7 +14,6 @@
 import numpy as np
 import pytest
 
-from sklearn.utils.testing import assert_array_equal
 from dateutil import parser
 
 from sagemaker_sklearn_extension.feature_extraction.date_time import DateTimeVectorizer, DateTimeDefinition
@@ -136,10 +135,10 @@ def test_transform_categorical():
     assert np.all(output >= 0)
 
     loc_year = extract_keys.index("YEAR")
-    assert_array_equal(output[:, loc_year], np.array([2012, 2011, 2012, 2012, 2012, 2018]))
+    np.testing.assert_array_equal(output[:, loc_year], np.array([2012, 2011, 2012, 2012, 2012, 2018]))
 
     loc_month = extract_keys.index("MONTH")
-    assert_array_equal(output[:, loc_month], np.array([0, 1, 0, 11, 0, 0]))
+    np.testing.assert_array_equal(output[:, loc_month], np.array([0, 1, 0, 11, 0, 0]))
 
 
 def test_transform_cyclic_leaves_year():
@@ -152,7 +151,7 @@ def test_transform_cyclic_leaves_year():
 
     loc_year = extract_keys.index("YEAR")
     loc_year *= 2
-    assert_array_equal(output[:, loc_year], np.array([2012, 2011, 2012, 2012, 2012, 2018]))
+    np.testing.assert_array_equal(output[:, loc_year], np.array([2012, 2011, 2012, 2012, 2012, 2018]))
 
     assert output.shape[1] == len(extract) * 2 - 1
 
@@ -166,7 +165,7 @@ def test_fit_transform_cyclic_leaves_year():
 
     loc_year = extract_keys.index("YEAR")
     loc_year *= 2
-    assert_array_equal(output[:, loc_year], np.array([2012, 2011, 2012, 2012, 2012, 2018]))
+    np.testing.assert_array_equal(output[:, loc_year], np.array([2012, 2011, 2012, 2012, 2012, 2018]))
 
     assert output.shape[1] == len(dtv.extract_) * 2 - 1
 

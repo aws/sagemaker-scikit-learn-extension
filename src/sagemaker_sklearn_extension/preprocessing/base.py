@@ -324,7 +324,6 @@ class QuantileExtremeValuesTransformer(BaseExtremeValueTransformer):
         self : QuantileExtremeValueTransformer
         """
         super().fit(X)
-        X = check_array(X)
         self.quantile_transformer_ = QuantileTransformer(random_state=0, copy=True)
         self.quantile_transformer_.fit(X)
         return self

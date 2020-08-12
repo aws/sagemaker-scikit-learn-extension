@@ -14,8 +14,6 @@
 import numpy as np
 import pytest
 
-from sklearn.utils.testing import assert_array_equal, assert_array_almost_equal
-
 from sagemaker_sklearn_extension.preprocessing import (
     LogExtremeValuesTransformer,
     QuantileExtremeValuesTransformer,
@@ -75,7 +73,7 @@ def test_remove_constant_columns_transformer(X, X_expected):
     transformer = RemoveConstantColumnsTransformer()
     X_observed = transformer.fit_transform(X)
 
-    assert_array_equal(X_observed, X_expected)
+    np.testing.assert_array_equal(X_observed, X_expected)
 
 
 @pytest.mark.parametrize(
@@ -91,15 +89,15 @@ def test_log_extreme_value_transformer(X, X_expected):
     transformer = LogExtremeValuesTransformer(threshold_std=2.0)
     X_observed = transformer.fit_transform(X)
 
-    assert_array_almost_equal(X_observed, X_expected)
+    np.testing.assert_array_almost_equal(X_observed, X_expected)
 
 
 def test_log_extreme_value_transformer_state():
     t = LogExtremeValuesTransformer(threshold_std=2.0)
     X_observed = t.fit_transform(X_extreme_vals)
 
-    assert_array_almost_equal(t.nonnegative_cols_, [1, 2])
-    assert_array_almost_equal(X_observed, X_log_extreme_vals)
+    np.testing.assert_array_almost_equal(t.nonnegative_cols_, [1, 2])
+    np.testing.assert_array_almost_equal(X_observed, X_log_extreme_vals)
 
 
 @pytest.mark.parametrize(
@@ -110,4 +108,4 @@ def test_extreme_value_transformer(X, X_expected):
     transformer = QuantileExtremeValuesTransformer(threshold_std=2.0)
     X_observed = transformer.fit_transform(X)
 
-    assert_array_almost_equal(X_observed, X_expected)
+    np.testing.assert_array_almost_equal(X_observed, X_expected)

@@ -11,12 +11,12 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
+import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
 from sklearn import datasets
 from sklearn.decomposition import PCA, TruncatedSVD
-from sklearn.utils.testing import assert_array_almost_equal
 
 from sagemaker_sklearn_extension.decomposition import RobustPCA
 
@@ -40,4 +40,4 @@ def test_svd(X, n_components, X_expected):
     svd = RobustPCA(n_components=n_components)
     X_observed = svd.fit_transform(X)
 
-    assert_array_almost_equal(X_observed, X_expected)
+    np.testing.assert_array_almost_equal(X_observed, X_expected)
