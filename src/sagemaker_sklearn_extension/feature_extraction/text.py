@@ -180,6 +180,48 @@ class MultiColumnTfidfVectorizer(BaseEstimator, VectorizerMixin, TransformerMixi
         self.vocabulary_sizes = vocabulary_sizes
         self.ignore_columns_with_zero_vocabulary_size = ignore_columns_with_zero_vocabulary_size
 
+    def _fit_vectorizer(self, col_idx, X):
+        max_features = self.max_features
+
+        # Override max_features for the current column in order to enforce the vocabulary size.
+        if self.max_features and self.vocabulary_sizes:
+            max_features = min(self.max_features, self.vocabulary_sizes[col_idx])
+        elif self.vocabulary_sizes:
+            max_features = self.vocabulary_sizes[col_idx]
+
+        try:
+            vectorizer = TfidfVectorizer(
+                strip_accents=self.strip_accents,
+                lowercase=self.lowercase,
+                preprocessor=self.preprocessor,
+                tokenizer=self.tokenizer,
+                stop_words=self.stop_words,
+                token_pattern=self.token_pattern,
+                ngram_range=self.ngram_range,
+                analyzer=self.analyzer,
+                max_df=self.max_df,
+                min_df=self.min_df,
+                max_features=max_features,
+                vocabulary=self.vocabulary,
+                dtype=self.dtype,
+                norm=self.norm,
+                use_idf=self.use_idf,
+                smooth_idf=self.smooth_idf,
+                sublinear_tf=self.sublinear_tf,
+            )
+            vectorizer.fit(X[:, col_idx])
+        except ValueError as err:
+            zero_vocab_errors = [
+                "After pruning, no terms remain. Try a lower min_df or a higher max_df.",
+                "max_df corresponds to < documents than min_df",
+                "empty vocabulary; perhaps the documents only contain stop words",
+            ]
+            if str(err) in zero_vocab_errors and self.ignore_columns_with_zero_vocabulary_size:
+                vectorizer = None
+            else:
+                raise
+        return vectorizer
+
     def fit(self, X, y=None):
         """Build the list of TfidfVectorizers for each column.
 
@@ -198,51 +240,22 @@ class MultiColumnTfidfVectorizer(BaseEstimator, VectorizerMixin, TransformerMixi
         if self.vocabulary_sizes and len(self.vocabulary_sizes) != n_columns:
             raise ValueError("If specified, vocabulary_sizes has to have exactly one entry per data column.")
 
-        self.vectorizers_ = []
-        for col_idx in range(n_columns):
-            max_features = self.max_features
-
-            # Override max_features for the current column in order to enforce the vocabulary size.
-            if self.max_features and self.vocabulary_sizes:
-                max_features = min(self.max_features, self.vocabulary_sizes[col_idx])
-            elif self.vocabulary_sizes:
-                max_features = self.vocabulary_sizes[col_idx]
-
-            try:
-                vectorizer = TfidfVectorizer(
-                    strip_accents=self.strip_accents,
-                    lowercase=self.lowercase,
-                    preprocessor=self.preprocessor,
-                    tokenizer=self.tokenizer,
-                    stop_words=self.stop_words,
-                    token_pattern=self.token_pattern,
-                    ngram_range=self.ngram_range,
-                    analyzer=self.analyzer,
-                    max_df=self.max_df,
-                    min_df=self.min_df,
-                    max_features=max_features,
-                    vocabulary=self.vocabulary,
-                    dtype=self.dtype,
-                    norm=self.norm,
-                    use_idf=self.use_idf,
-                    smooth_idf=self.smooth_idf,
-                    sublinear_tf=self.sublinear_tf,
-                )
-                vectorizer.fit(X[:, col_idx])
-            except ValueError as err:
-                zero_vocab_errors = [
-                    "After pruning, no terms remain. Try a lower min_df or a higher max_df.",
-                    "max_df corresponds to < documents than min_df",
-                    "empty vocabulary; perhaps the documents only contain stop words",
-                ]
-                if str(err) in zero_vocab_errors and self.ignore_columns_with_zero_vocabulary_size:
-                    vectorizer = None
-                else:
-                    raise
-
-            self.vectorizers_.append(vectorizer)
+        self.vectorizers_ = [self._fit_vectorizer(i, X) for i in range(n_columns)]
 
         return self
+
+    def _transform_vectorizer(self, col_idx, X):
+        if self.vectorizers_[col_idx]:
+            tfidf_features = self.vectorizers_[col_idx].transform(X[:, col_idx])
+            # If the vocabulary size is specified and there are too few features, then pad the output with zeros.
+            if self.vocabulary_sizes and tfidf_features.shape[1] < self.vocabulary_sizes[col_idx]:
+                tfidf_features = sp.csr_matrix(
+                    (tfidf_features.data, tfidf_features.indices, tfidf_features.indptr),
+                    shape=(tfidf_features.shape[0], self.vocabulary_sizes[col_idx]),
+                )
+            return tfidf_features
+        # If ``TfidfVectorizer`` threw a value error, add an empty TF-IDF document-term matrix for the column
+        return sp.csr_matrix((X.shape[0], 0))
 
     def transform(self, X, y=None):
         """Transform documents to document term-matrix.
@@ -259,22 +272,7 @@ class MultiColumnTfidfVectorizer(BaseEstimator, VectorizerMixin, TransformerMixi
         check_is_fitted(self, "vectorizers_")
         X = check_array(X, dtype=None)
 
-        ret = []
-        for col_idx in range(X.shape[1]):
-            if self.vectorizers_[col_idx]:
-                tfidf_features = self.vectorizers_[col_idx].transform(X[:, col_idx])
-                # If the vocabulary size is specified and there are too few features, then pad the output with zeros.
-                if self.vocabulary_sizes and tfidf_features.shape[1] < self.vocabulary_sizes[col_idx]:
-                    tfidf_features = sp.csr_matrix(
-                        (tfidf_features.data, tfidf_features.indices, tfidf_features.indptr),
-                        shape=(tfidf_features.shape[0], self.vocabulary_sizes[col_idx]),
-                    )
-            else:
-                # If ``TfidfVectorizer`` threw a value error, add an empty TF-IDF document-term matrix for the column
-                tfidf_features = sp.csr_matrix((X.shape[0], 0))
-            ret.append(tfidf_features)
-
-        return sp.hstack(ret)
+        return sp.hstack([self._transform_vectorizer(i, X) for i in range(X.shape[1])])
 
     def _more_tags(self):
         return {"X_types": ["string"]}

@@ -16,7 +16,6 @@ import pytest
 from scipy.sparse import csr_matrix, issparse
 
 from sagemaker_sklearn_extension.preprocessing import QuadraticFeatures, RobustStandardScaler
-from sklearn.utils.testing import assert_array_almost_equal, assert_array_equal
 
 
 def _n_choose_2(n):
@@ -50,7 +49,7 @@ def test_quadratic_features_explicit():
             (X_standardized[:, 0] * X_standardized[:, 1]).reshape((-1, 1)),
         ]
     )
-    assert_array_equal(X_observed, X_expected)
+    np.testing.assert_array_equal(X_observed, X_expected)
 
 
 def test_quadratic_features_max_n_features():
@@ -107,14 +106,14 @@ def test_quadratic_features_single_column_input_explicit():
     """Test that using a single-column matrix as input produces the expected output."""
     X_observed = QuadraticFeatures().fit_transform(X_standardized[:, 0].reshape((-1, 1)))
     X_expected = np.hstack([X_standardized[:, [0]], (X_standardized[:, 0] * X_standardized[:, 0]).reshape((-1, 1)),])
-    assert_array_equal(X_observed, X_expected)
+    np.testing.assert_array_equal(X_observed, X_expected)
 
 
 def test_robust_standard_scaler_dense():
     scaler = RobustStandardScaler()
     X_observed = scaler.fit_transform(X)
 
-    assert_array_equal(X_observed, X_standardized)
+    np.testing.assert_array_equal(X_observed, X_standardized)
 
 
 def test_robust_standard_scaler_sparse():
@@ -122,10 +121,10 @@ def test_robust_standard_scaler_sparse():
     X_observed = scaler.fit_transform(X_sparse)
 
     assert issparse(X_observed)
-    assert_array_almost_equal(X_observed.toarray(), X / np.std(X, axis=0))
+    np.testing.assert_array_almost_equal(X_observed.toarray(), X / np.std(X, axis=0))
 
 
 def test_robust_standard_dense_with_low_nnz_columns():
     scaler = RobustStandardScaler()
     X_observed = scaler.fit_transform(X_low_nnz)
-    assert_array_almost_equal(X_observed, X_low_nnz_standardized)
+    np.testing.assert_array_almost_equal(X_observed, X_low_nnz_standardized)

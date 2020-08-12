@@ -261,9 +261,7 @@ class RobustStandardScaler(BaseEstimator, TransformerMixin):
             X, accept_sparse=("csr", "csc"), estimator=self, dtype=FLOAT_DTYPES, force_all_finite="allow-nan"
         )
 
-        with_mean = True
-        if issparse(X):
-            with_mean = False
+        with_mean = not issparse(X)
 
         self.scaler_ = StandardScaler(with_mean=with_mean, with_std=True, copy=self.copy)
         self.scaler_.fit(X)

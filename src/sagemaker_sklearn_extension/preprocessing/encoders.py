@@ -109,7 +109,7 @@ class ThresholdOneHotEncoder(OneHotEncoder):
         super().fit(X, y)
         assert self.max_categories >= 1
 
-        _, n_samples, n_features = self._check_X(X)
+        n_samples, n_features = X.shape
 
         if not self.threshold:
             threshold = max(10, n_samples / 1000)
@@ -356,7 +356,7 @@ class RobustLabelEncoder(LabelEncoder):
         labels = np.arange(len(self.classes_))
         diff = np.setdiff1d(y, labels)
 
-        if diff and not self.fill_unseen_labels:
+        if diff.size > 0 and not self.fill_unseen_labels:
             raise ValueError("y contains previously unseen labels: %s" % str(diff))
 
         y_decoded = [self.classes_[idx] if idx in labels else self.fill_label_value for idx in y]
@@ -513,7 +513,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
     """
 
     def __init__(self, categories="auto", dtype=np.float32, unknown_as_nan=False):
-        super(RobustOrdinalEncoder, self).__init__(categories, dtype)
+        super(RobustOrdinalEncoder, self).__init__(categories=categories, dtype=dtype)
         self.categories = categories
         self.dtype = dtype
         self.unknown_as_nan = unknown_as_nan
