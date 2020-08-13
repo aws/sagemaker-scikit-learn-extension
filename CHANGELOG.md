@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.0.0 (2020-08-13)
+
+### Breaking changes
+
+ * update sklearn dependency version to 0.23 and mlio version to 0.5
+
+### Features
+
+ * OrdinalEncoder can output np.nan instead of n for unseen values
+
+### Bug fixes and other changes
+
+ * minor performance optimizations and refactoring
+
 ## v1.2.0 (2020-07-29)
 
 ### Features
