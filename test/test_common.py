@@ -30,6 +30,7 @@ from sagemaker_sklearn_extension.preprocessing import RemoveConstantColumnsTrans
 from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustStandardScaler
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
+from sagemaker_sklearn_extension.preprocessing import WOEEncoder
 
 
 @pytest.mark.parametrize(
@@ -47,6 +48,7 @@ from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
         RobustMissingIndicator(),
         RobustStandardScaler(),
         ThresholdOneHotEncoder(),
+        # WOEEncoder(),
     ],
 )
 def test_all_estimators(Estimator):

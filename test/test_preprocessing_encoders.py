@@ -14,11 +14,15 @@
 import numpy as np
 import pytest
 import scipy.sparse as sp
+import pandas as pd
+
+from pytest import approx
 
 from sagemaker_sklearn_extension.preprocessing import NALabelEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustOrdinalEncoder
+from sagemaker_sklearn_extension.preprocessing import WOEEncoder
 
 
 X = np.array([["hot dog", 1], ["hot dog", 1], ["apple", 2], ["hot dog", 3], ["hot dog", 1], ["banana", 3]])
@@ -254,3 +258,66 @@ def test_robust_ordinal_encoding_inverse_transform_floatkeys():
     assert reverse.dtype == object
     assert np.array_equal(data[1:], reverse[:-1])
     assert all([x is None for x in reverse[-1]])
+
+
+titanic = pd.read_csv("test/data/csv/titanic.csv")
+
+
+def test_woe_basic_comparison_skcontrib():
+    # no regularization
+    SK_CONTRIB_0 = np.array([0.36448484, 0.66648266, 1.00391596])
+    # regularization + laplace smoothing
+    SK_CONTRIB_L = np.array([0.36397425, 0.66473284, 1.00025526])
+
+    y = titanic["Survived"]
+    x = titanic["Pclass"]
+
+    # No smoothing
+    enc = WOEEncoder(alpha=0)
+    xe = enc.fit_transform(x, y)
+    uv = np.sort(np.abs(np.unique(xe)))
+    assert np.allclose(uv, SK_CONTRIB_0)
+
+    # Laplace smoothing
+    enc = WOEEncoder(alpha=0.5, laplace=True)
+    xe = enc.fit_transform(x, y)
+    uv = np.sort(np.abs(np.unique(xe)))
+    assert np.allclose(uv, SK_CONTRIB_L)
+
+
+def test_woe_binning():
+    y = titanic["Survived"]
+    x = titanic["Fare"]
+
+    enc = WOEEncoder(binning="quantile", n_bins=5)
+    xe = enc.fit_transform(x, y)
+    assert len(np.unique(xe)) == 5
+
+    enc = WOEEncoder(binning="uniform", n_bins=5, alpha=0.5)
+    xe = enc.fit_transform(x, y)
+    assert len(np.unique(xe)) > 3
+
+
+def test_woe_multi_cols():
+    y = titanic["Survived"]
+    X = titanic[["Fare", "Age"]]
+    X = X.fillna(value=50)
+
+    enc = WOEEncoder(binning="quantile", n_bins=5)
+    Xe = enc.fit_transform(X, y)
+    assert len(np.unique(Xe[:, 0])) == 5
+    assert len(np.unique(Xe[:, 1])) == 5
+
+
+def test_woe_index_spec():
+    N = 100
+    np.random.seed(555)
+    sex = np.random.choice(['m', 'f'], size=N)
+    age = np.random.randint(low=25, high=95, size=N)
+    y = np.random.choice([0, 1], size=100)
+    X = pd.DataFrame({'sex': sex, 'age': age})
+    enc = WOEEncoder(feature_indices=[1], binning="quantile", n_bins=3)
+    xe = enc.fit_transform(X, y)
+    assert xe.shape == (N, 1)
+    xef = xe.flatten()
+    assert len(np.unique(xef)) == 3
