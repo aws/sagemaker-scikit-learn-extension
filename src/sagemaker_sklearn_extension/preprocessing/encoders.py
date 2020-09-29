@@ -629,7 +629,6 @@ class WOEAsserts(Enum):
     BINNING = "Binning strategy must be in {'uniform', 'quantile', 'kmeans'}."
     NBINS = "Number of bins must be larger than 2."
     MISSING = "Weight-of-Evidence encoder does not support missing values."
-    NO_FIT = "The encoder has not been fitted yet."
     DIMS_TRANSFORM = "The number of columns of `X` doesn't match the encoder."
     FEAT_OOR = "At least one of the feature index is out of the allowed range."
 
