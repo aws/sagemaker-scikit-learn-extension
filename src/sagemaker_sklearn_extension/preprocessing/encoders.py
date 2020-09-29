@@ -702,7 +702,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
     References
     ----------
     [1] https://www.listendata.com/2015/03/weight-of-evidence-woe-and-information.html
-    [2] https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.KBinsDiscretizer.html?highlight=discretizer#sklearn.preprocessing.KBinsDiscretizer
+    [2] https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.KBinsDiscretizer.html
     [3] https://en.wikipedia.org/wiki/Additive_smoothing
     """
 
@@ -727,7 +727,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         # Numpy's isnan will fail on object types.
         try:
             assert not np.isnan(v).any(), WOEAsserts.MISSING
-        except TypeError as e:
+        except TypeError:
             pass
 
     def _feature_iterator(self, X):
@@ -740,16 +740,16 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
             X_raw = X
         dims = X_raw.shape
         if len(dims) == 1:  # vector
-            iter = (X_raw,)
+            feature_iterator = (X_raw,)
         else:  # 2d array
             p = dims[1]
             # selection of columns: either all or only given ones
             sel = self.feature_indices if self.feature_indices else range(p)
             assert all(0 <= i < p for i in sel), \
                 WOEAsserts.FEAT_OOR
-            iter = (X_raw[:, i] for i in sel)
+            feature_iterator = (X_raw[:, i] for i in sel)
 
-        return iter
+        return feature_iterator
 
     def _woe(self, x):
         """Return the categories for a feature vector `x` as well as the
