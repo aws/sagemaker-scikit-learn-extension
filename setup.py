@@ -36,5 +36,5 @@ setup(
     license="Apache License 2.0",
     keywords="ML Amazon AWS AI SKLearn Scikit-Learn",
     classifiers=["Development Status :: 4 - Beta", "License :: OSI Approved :: Apache Software License"],
-    extras_require={"test": ["tox", "tox-conda", "pytest", "coverage", "pandas"]},
+    extras_require={"test": ["tox", "tox-conda", "pytest", "coverage"]},
 )
