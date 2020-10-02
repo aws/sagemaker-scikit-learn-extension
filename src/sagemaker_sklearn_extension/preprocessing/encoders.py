@@ -848,7 +848,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
             codex, woe = self.woe_pairs_[i]
             # check that the data to encode doesn't have classes yet unseen
             assert all([e in codex.keys() for e in np.unique(x)]), \
-                WOE.UNSEEN_CAT
+                WOEAsserts.UNSEEN_CAT
             # construct the encoded column by inverting the codex, if the category
             # is not recognised (not a key of the codex), a np.nan is inputted
             Xe[:, i] = np.array([woe[codex[xi]] for xi in x])
