@@ -47,8 +47,7 @@ from sagemaker_sklearn_extension.preprocessing import WOEEncoder
         RobustLabelEncoder(),
         RobustMissingIndicator(),
         RobustStandardScaler(),
-        ThresholdOneHotEncoder(),
-        # WOEEncoder(),
+        ThresholdOneHotEncoder()
     ],
 )
 def test_all_estimators(Estimator):

@@ -14,7 +14,6 @@
 import numpy as np
 import pytest
 import scipy.sparse as sp
-import pandas as pd
 
 from pytest import approx
 
@@ -260,64 +259,65 @@ def test_robust_ordinal_encoding_inverse_transform_floatkeys():
     assert all([x is None for x in reverse[-1]])
 
 
-titanic = pd.read_csv("test/data/csv/titanic.csv")
+# first 50 rows of titanic dataset
+titanic_y = np.array([
+    0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1,
+    1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1,
+    1, 0, 0, 1, 0, 0])
+titanic_pclass = np.array([
+    3, 1, 3, 1, 3, 3, 1, 3, 3, 2, 3, 1, 3, 3, 3, 2, 3, 2, 3, 3, 2, 2,
+    3, 1, 3, 3, 3, 1, 3, 3, 1, 1, 3, 2, 1, 1, 3, 3, 3, 3, 3, 2, 3, 2,
+    3, 3, 3, 3, 3, 3])
+titanic_fare = np.array([
+    7.25, 71.2833, 7.925, 53.1, 8.05, 8.4583, 51.8625, 21.075,
+    11.1333, 30.0708, 16.7, 26.55, 8.05, 31.275, 7.8542, 16.,
+    29.125, 13., 18., 7.225, 26., 13., 8.0292, 35.5, 21.075,
+    31.3875, 7.225, 263., 7.8792, 7.8958, 27.7208, 146.5208,
+    7.75, 10.5, 82.1708, 52., 7.2292, 8.05, 18., 11.2417, 9.475,
+    21., 7.8958, 41.5792, 7.8792, 8.05, 15.5, 7.75, 21.6792, 17.8])
+titanic_age = np.array([
+    22., 38., 26., 35., 35., np.nan, 54., 2., 27., 14., 4., 58., 20.,
+    39., 14., 55., 2., np.nan, 31., np.nan, 35., 34., 15., 28., 8., 38.,
+    np.nan, 19., np.nan, np.nan, 40., np.nan, np.nan, 66., 28., 42., np.nan,
+    21., 18., 14., 40., 27., np.nan, 3., 19., np.nan, np.nan, np.nan, np.nan, 18.])
 
 
-def test_woe_basic_comparison_skcontrib():
-    # no regularization
-    SK_CONTRIB_0 = np.array([0.36448484, 0.66648266, 1.00391596])
-    # regularization + laplace smoothing
-    SK_CONTRIB_L = np.array([0.36397425, 0.66473284, 1.00025526])
-
-    y = titanic["Survived"]
-    x = titanic["Pclass"]
-
-    # No smoothing
+def test_woe_basic_comparison_skcontrib_no_smoothing():
+    SK_CONTRIB_0 = np.array([0.24116206, 0.26966357, 0.75198768])
     enc = WOEEncoder(alpha=0)
-    xe = enc.fit_transform(x, y)
+    xe = enc.fit_transform(titanic_pclass.reshape(-1, 1), titanic_y)
     uv = np.sort(np.abs(np.unique(xe)))
     assert np.allclose(uv, SK_CONTRIB_0)
 
-    # Laplace smoothing
+
+def test_woe_basic_comparison_skcontrib_laplace():
+    SK_CONTRIB_L = np.array([0.23180161, 0.26289463, 0.68378674])
     enc = WOEEncoder(alpha=0.5, laplace=True)
-    xe = enc.fit_transform(x, y)
+    xe = enc.fit_transform(titanic_pclass.reshape(-1, 1), titanic_y)
     uv = np.sort(np.abs(np.unique(xe)))
     assert np.allclose(uv, SK_CONTRIB_L)
 
 
-def test_woe_binning():
-    y = titanic["Survived"]
-    x = titanic["Fare"]
+def test_woe_binning_quantile():
+    enc = WOEEncoder(binning="quantile", n_bins=4)
+    age = titanic_age.copy()
+    age[np.isnan(age)] = np.median(age[~np.isnan(age)])
+    xe = enc.fit_transform(age.reshape(-1, 1), titanic_y)
+    print(np.unique(xe))
+    assert len(np.unique(xe)) == 4
 
-    enc = WOEEncoder(binning="quantile", n_bins=5)
-    xe = enc.fit_transform(x, y)
-    assert len(np.unique(xe)) == 5
 
+def test_woe_binning_uniform():
     enc = WOEEncoder(binning="uniform", n_bins=5, alpha=0.5)
-    xe = enc.fit_transform(x, y)
+    xe = enc.fit_transform(titanic_fare.reshape(-1, 1), titanic_y)
     assert len(np.unique(xe)) > 3
 
 
 def test_woe_multi_cols():
-    y = titanic["Survived"]
-    X = titanic[["Fare", "Age"]]
-    X = X.fillna(value=50)
-
-    enc = WOEEncoder(binning="quantile", n_bins=5)
-    Xe = enc.fit_transform(X, y)
-    assert len(np.unique(Xe[:, 0])) == 5
-    assert len(np.unique(Xe[:, 1])) == 5
-
-
-def test_woe_index_spec():
-    N = 100
-    np.random.seed(555)
-    sex = np.random.choice(['m', 'f'], size=N)
-    age = np.random.randint(low=25, high=95, size=N)
-    y = np.random.choice([0, 1], size=100)
-    X = pd.DataFrame({'sex': sex, 'age': age})
-    enc = WOEEncoder(feature_indices=[1], binning="quantile", n_bins=3)
-    xe = enc.fit_transform(X, y)
-    assert xe.shape == (N, 1)
-    xef = xe.flatten()
-    assert len(np.unique(xef)) == 3
+    age = titanic_age.copy()
+    age[np.isnan(age)] = np.median(age[~np.isnan(age)])
+    X = np.vstack((age, titanic_fare)).T
+    enc = WOEEncoder(binning="quantile", n_bins=4)
+    Xe = enc.fit_transform(X, titanic_y)
+    assert len(np.unique(Xe[:, 0])) == 4
+    assert len(np.unique(Xe[:, 1])) == 4

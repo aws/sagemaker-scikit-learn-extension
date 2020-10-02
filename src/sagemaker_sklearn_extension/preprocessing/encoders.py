@@ -628,45 +628,45 @@ class WOEAsserts(Enum):
     BINARY = "Weight-of-Evidence encoder is only supported for binary targets."
     BINNING = "Binning strategy must be in {'uniform', 'quantile', 'kmeans'}."
     NBINS = "Number of bins must be larger than 2."
-    MISSING = "Weight-of-Evidence encoder does not support missing values."
     DIMS_TRANSFORM = "The number of columns of `X` doesn't match the encoder."
-    FEAT_OOR = "At least one of the feature index is out of the allowed range."
+    UNSEEN_CAT = "One or more category in the data was not seen at training time."
 
 
 class WOEEncoder(BaseEstimator, TransformerMixin):
-    """Weight of Evidence (WoE) encoder: encodes categorical features as a
-    numerical vector using weight of evidence encoding. This is only supported
-    with binary targets.
-    Both the features and the target are assumed to be free of missing values,
-    missing values should be handled separately before the encoding.
-    A binning function can be provided to handle numerical features which are
-    then binned first then encoded.
-    Note that the sign of the weight of evidence values depends on the
-    order in which the categories of the target column are detected. This does
-    not affect the performance of any supervised model applied thereafter.
+    """Weight of Evidence (WoE) encoder: encodes categorical features as a numerical vector
+    using weight of evidence encoding. This is only supported with binary targets. Both the
+    features and the target are assumed to be free of missing values, missing values should
+    be handled separately before the encoding. A binning function can be provided to handle
+    numerical features which are then binned first then encoded.
+    Note that the sign of the weight of evidence values depends on the order in which the
+    categories of the target column are detected. This does not affect the performance of
+    any supervised model applied thereafter.
     See [1] for more details on WoE.
 
     Parameters
     ----------
     feature_indices: list of integer indices (default=None)
-        Indices of the features to encode with WoE. If set to `None`, all
-        features will be encoded.
+        Indices of the features to encode with WoE. If set to `None`, all features will be
+        encoded.
 
     binning: {'uniform', 'quantile', 'kmeans', None}, default=None
-        What binning method to apply if not set to None. See [2].
+        What binning method to apply, no binning applied if set to None.
+        This uses ScikitLearn's KBinsDiscretizer (see [2]).
+        uniform: all bins in each feature have identical width.
+        quantile: all bins in each feature have the same number of points.
+        kmeans: values in each bin have the same nearest center of a 1D kmeans cluster.
 
     n_bins: int (default=10), greater than 2
-        Number of bins to use if binning is to be applied.
+        Number of bins to use when binning is applied.
 
     alpha: float (default = 0.5), non-negative
-        Regularization value to avoid numerical errors due to division by
-        zero in the computation of the weight of evidence (e.g. in case the
-        data points corresponding to one category of a feature all have
-        the same target value).
+        Regularization value to avoid numerical errors due to division by zero in the
+        computation of the weight of evidence (e.g. in case the data points corresponding
+        to one category of a feature all have the same target value).
 
     laplace: boolean (default = False)
-        If alpha is positive, adds Laplace smoothing to the computation
-        of the weight of evidence.
+        If alpha is positive, adds Laplace smoothing to the computation of the weight of
+        evidence.
 
     Example
     -------
@@ -680,24 +680,11 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
 
     Attributes
     ----------
-    _beta: float
-        Value used in the Laplace smoothing when smoothing is used. See [3].
+    binner_: estimator trained to bin numerical data if binning is not None.
 
-    _count_y: list of size 2
-        Number of observations for each of the two target classes.
-
-    _mask_y_0: array (n_samples,)
-        Mask of observations for which the target is the first one.
-
-    _mask_y_1: array (n_samples,)
-        Mask of observations for which the target is the second one.
-
-    _binners: list of size n_encoded_features
-        List of fitted binning encoders.
-
-    _woe_pairs: list of pairs (codex, woe) of size n_encoded_features
-        The codex has the mapping feature_value => woe_index and woe has the
-        weight of evidence values.
+    woe_pairs_: list of pairs (codex, woe) of size n_encoded_features
+        The codex has the mapping feature_value => woe_index and woe has the weight of
+        evidence values.
 
     References
     ----------
@@ -714,57 +701,33 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         self.alpha = alpha
         self.laplace = laplace
 
-        # fail early for arguments that don't meet the guidelines
-        if binning:
-            assert binning in ("uniform", "quantile", "kmeans"), \
-                WOEAsserts.BINNING
-            assert n_bins > 2, WOEAsserts.NBINS
-        assert alpha >= 0, WOEAsserts.ALPHA
+    def _woe(self, x, count_y, mask_y_0, beta):
+        """Return the categories for a feature vector `x` as well as the corresponding
+        weight of evidence value for each of those categories.
 
-    def _check_no_missing(self, v):
-        """Check a numpy vector `v` has no missing values.
+        Parameters
+        ----------
+        x: vector, shape (n_samples,)
+            Feature vector to encode.
+        count_y: list of length 2
+            List of counts for the number of observations with the first (resp. the second)
+            target category.
+        mask_y_0: vector, shape (n_samples,)
+            Mask of observations with the first target category.
+        beta: float
+            Value to use for Laplace Smoothing (0 if laplace is False).
         """
-        # Numpy's isnan will fail on object types.
-        try:
-            assert not np.isnan(v).any(), WOEAsserts.MISSING
-        except TypeError:
-            pass
-
-    def _feature_iterator(self, X):
-        """Create a lazy iterator over the columns of `X`. Each element
-        returned by the iterator is a numpy vector.
-        """
-        if hasattr(X, 'values'):
-            X_raw = X.values
-        else:
-            X_raw = X
-        dims = X_raw.shape
-        if len(dims) == 1:  # vector
-            feature_iterator = (X_raw,)
-        else:  # 2d array
-            p = dims[1]
-            # selection of columns: either all or only given ones
-            sel = self.feature_indices if self.feature_indices else range(p)
-            assert all(0 <= i < p for i in sel), \
-                WOEAsserts.FEAT_OOR
-            feature_iterator = (X_raw[:, i] for i in sel)
-
-        return feature_iterator
-
-    def _woe(self, x):
-        """Return the categories for a feature vector `x` as well as the
-        corresponding weight of evidence value for each of those categories.
-        """
-        self._check_no_missing(x)
         cat_x = np.unique(x)
+        mask_y_1 = np.logical_not(mask_y_0)
 
-        # Computation of the Weight of Evidence
+        # Computation of the Weight of Evidence for a category c in cat_x and with
+        # regularization α
         #
         #   woe_c = log( { #(y==0 | c) + α / #(y==1 | c)  + α } *
         #                { #(y==1) + β / #(y==0) + β } )
         #
-        # where β = 2α if laplace == True, 0 otherwise. The second factor
-        # can be computed once, call it `r10` then
+        # where β = 2α if laplace == True, 0 otherwise. The second factor can be computed
+        # once, call it `r10` then
         #
         #   woe_c = log( r10 * ratio(c) )
         #
@@ -776,27 +739,17 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         def ratio(c):
             x_c = x == c
             # retrieve the number of (y == 0 | x == c) and same for y == 1
-            y_0_c = sum(np.logical_and(self.mask_y_0_, x_c))
-            y_1_c = sum(np.logical_and(self.mask_y_1_, x_c))
+            y_0_c = sum(np.logical_and(mask_y_0, x_c))
+            y_1_c = sum(np.logical_and(mask_y_1, x_c))
             # compute the ratio with regularization for 0 events
             return (y_0_c + self.alpha) / (y_1_c + self.alpha)
 
         # computation of woe possibly using Laplace smoothing (beta factor)
-        r10 = (self.count_y_[1] + self.beta_) / (self.count_y_[0] + self.beta_)
+        r10 = (count_y[1] + beta) / (count_y[0] + beta)
         woe = np.log(r10 * np.array([ratio(c) for c in cat_x]))
-
         # encoder from unique values of x to index
         codex = {c: i for (i, c) in enumerate(cat_x)}
-
         return (codex, woe)
-
-    def _encode(self, t):
-        i, x = t
-        codex, woe = self.woe_pairs_[i]
-        if self.binning:
-            x = self.binners_[i].transform(x.reshape(-1, 1)).flatten()
-
-        return [woe[codex[xi]] for xi in x]
 
     def fit(self, X, y):
         """Fit Weight of Evidence encoder to `X` and `y`.
@@ -813,42 +766,35 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         -------
         self: WOEEncoder.
         """
+        # Validate parameters
+        if self.binning:
+            assert self.binning in ("uniform", "quantile", "kmeans"), \
+                WOEAsserts.BINNING
+            assert self.n_bins > 2, WOEAsserts.NBINS
+        assert self.alpha >= 0, WOEAsserts.ALPHA
+        # Validate data
         X, y = check_X_y(X, y)
-        self._check_no_missing(y)
         # recover the target categories and check there's only two
         cat_y = np.unique(y)
         assert len(cat_y) == 2, WOEAsserts.BINARY
 
-        # fitted values
-        self.beta_ = 2 * self.alpha * self.laplace
+        # value for laplace smoothing
+        beta = 2 * self.alpha * self.laplace
 
-        # count the number of occurrences per target class
-        # and form the mask for y==0 and y==1
-        self.count_y_ = [sum(y == c) for c in cat_y]
-        self.mask_y_0_ = (y == cat_y[0])
-        self.mask_y_1_ = np.logical_not(self.mask_y_0_)
+        # count the number of occurrences per target class and form the mask
+        # for the rows for which y==0
+        count_y = [sum(y == c) for c in cat_y]
+        mask_y_0 = (y == cat_y[0])
 
-        # if binning is on, apply it on each column then compute woe
         if self.binning:
-            # template for the binner
-            binner_template = KBinsDiscretizer(
-                n_bins=self.n_bins, strategy=self.binning, encode="ordinal")
-            binners = []    # x -> cat_x
-            woe_pairs = []  # (cat_x, woe)
-            for x in self._feature_iterator(X):
-                # copy the template binner and apply it to the column
-                b = clone(binner_template)
-                x_binned = b.fit_transform(x.reshape(-1, 1)).flatten()
-                # keep track of the binner + the pair for the binned column
-                binners.append(b)
-                woe_pairs.append(self._woe(x_binned))
-            self.binners_ = binners
-
-        # if binning is off then directly compute the woe for each col
+            self.binner_ = KBinsDiscretizer(n_bins=self.n_bins, strategy=self.binning,
+                                            encode="ordinal")
+            Xp = self.binner_.fit_transform(X)
         else:
-            woe_pairs = [self._woe(x) for x in self._feature_iterator(X)]
-
-        self.woe_pairs_ = woe_pairs
+            Xp = X
+        # go over each column and compute the woe
+        self.woe_pairs_ = \
+            list(map(lambda x: self._woe(x, count_y, mask_y_0, beta), Xp.T))
         return self
 
     def transform(self, X):
@@ -859,10 +805,27 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         X_encoded: array, shape (n_samples, n_encoded_features)
             Array with each of the encoded columns.
         """
-        # check is fitted + dimensions match
+        # check is fitted
         check_is_fitted(self, "woe_pairs_")
-        m = map(self._encode, enumerate(self._feature_iterator(X)))
-        return np.array(list(m)).T
+        # check input
+        check_array(X)
+
+        if self.binning:
+            Xp = self.binner_.transform(X)
+        else:
+            Xp = X
+
+        Xe = np.zeros(Xp.shape)
+        for (i, x) in enumerate(Xp.T):
+            codex, woe = self.woe_pairs_[i]
+            # check that the data to encode doesn't have classes yet unseen
+            assert all([e in codex.keys() for e in np.unique(x)]), \
+                WOE.UNSEEN_CAT
+            # construct the encoded column by inverting the codex, if the category
+            # is not recognised (not a key of the codex), a np.nan is inputted
+            Xe[:, i] = np.array([woe[codex[xi]] for xi in x])
+
+        return Xe
 
     def fit_transform(self, X, y):
         return self.fit(X, y).transform(X)
