@@ -671,12 +671,40 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
     Example
     -------
     >>> import numpy as np
-    >>> from woe import WOEEncoder
-    >>> sex = np.random.choice(['m', 'f'], size=100)
-    >>> age = np.random.randint(low=25, high=95, size=100)
-    >>> y = np.random.choice([0, 1], size=100)
-    >>> e_sex = WOEEncoder().fit_transform(sex, y)
-    >>> e_age = WOEEncoder(binning='quantile', n_bins=5).fit_transform(age, y)
+    >>> from sagemaker_sklearn_extension.preprocessing import WOEEncoder
+    >>> np.random.seed(112)
+    >>> N = 10
+    >>> y = np.random.choice([0, 1], size=N)
+    >>> y
+    array([0, 1, 0, 0, 1, 0, 1, 0, 1, 0])
+    >>> sex = np.random.choice(['m', 'f'], size=N)
+    >>> sex
+    array(['m', 'f', 'm', 'm', 'f', 'm', 'f', 'm', 'm', 'm'], dtype='<U1')
+    >>> WOEEncoder().fit_transform(sex.reshape(-1, 1), y)
+    array([[ 1.06087196],
+           [-2.35137526],
+           [ 1.06087196],
+           [ 1.06087196],
+           [-2.35137526],
+           [ 1.06087196],
+           [-2.35137526],
+           [ 1.06087196],
+           [ 1.06087196],
+           [ 1.06087196]])
+    >>> age = np.random.randint(low=25, high=95, size=N)
+    >>> age
+    array([54, 73, 76, 30, 53, 33, 28, 51, 62, 43])
+    >>> WOEEncoder(binning='quantile', n_bins=2).fit_transform(age.reshape(-1, 1), y)
+    array([[-0.74193734],
+           [-0.74193734],
+           [-0.74193734],
+           [ 0.69314718],
+           [-0.74193734],
+           [ 0.69314718],
+           [ 0.69314718],
+           [ 0.69314718],
+           [-0.74193734],
+           [ 0.69314718]])
 
     Attributes
     ----------
@@ -770,7 +798,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         if self.binning:
             assert self.binning in ("uniform", "quantile", "kmeans"), \
                 WOEAsserts.BINNING
-            assert self.n_bins > 2, WOEAsserts.NBINS
+            assert self.n_bins >= 2, WOEAsserts.NBINS
         assert self.alpha >= 0, WOEAsserts.ALPHA
         # Validate data
         X, y = check_X_y(X, y)
