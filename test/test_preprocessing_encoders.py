@@ -15,8 +15,6 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from pytest import approx
-
 from sagemaker_sklearn_extension.preprocessing import NALabelEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder

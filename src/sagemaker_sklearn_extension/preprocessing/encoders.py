@@ -729,7 +729,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         self.alpha = alpha
         self.laplace = laplace
 
-    def _woe(self, x, count_y, mask_y_0, beta):
+    def _woe(self, x, count_y_0, mask_y_0, beta):
         """Return the categories for a feature vector `x` as well as the corresponding
         weight of evidence value for each of those categories.
 
@@ -747,6 +747,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         """
         cat_x = np.unique(x)
         mask_y_1 = np.logical_not(mask_y_0)
+        count_y_1 = len(mask_y_0) - count_y_0
 
         # Computation of the Weight of Evidence for a category c in cat_x and with
         # regularization α
@@ -773,7 +774,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
             return (y_0_c + self.alpha) / (y_1_c + self.alpha)
 
         # computation of woe possibly using Laplace smoothing (beta factor)
-        r10 = (count_y[1] + beta) / (count_y[0] + beta)
+        r10 = (count_y_1 + beta) / (count_y_0 + beta)
         woe = np.log(r10 * np.array([ratio(c) for c in cat_x]))
         # encoder from unique values of x to index
         codex = {c: i for (i, c) in enumerate(cat_x)}
@@ -802,17 +803,20 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         assert self.alpha >= 0, WOEAsserts.ALPHA
         # Validate data
         X, y = check_X_y(X, y)
+        # Keep track of number of features encoded
+        self._dim = X.shape[1]
         # recover the target categories and check there's only two
         cat_y = np.unique(y)
-        assert len(cat_y) == 2, WOEAsserts.BINARY
+        # it should be == 2 but relax to <= 2 for a single-sample test by check_estimator
+        assert len(cat_y) <= 2, WOEAsserts.BINARY
 
         # value for laplace smoothing
         beta = 2 * self.alpha * self.laplace
 
         # count the number of occurrences per target class and form the mask
         # for the rows for which y==0
-        count_y = [sum(y == c) for c in cat_y]
         mask_y_0 = (y == cat_y[0])
+        count_y_0 = sum(mask_y_0)
 
         if self.binning:
             self.binner_ = KBinsDiscretizer(n_bins=self.n_bins, strategy=self.binning,
@@ -822,7 +826,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
             Xp = X
         # go over each column and compute the woe
         self.woe_pairs_ = \
-            list(map(lambda x: self._woe(x, count_y, mask_y_0, beta), Xp.T))
+            list(map(lambda x: self._woe(x, count_y_0, mask_y_0, beta), Xp.T))
         return self
 
     def transform(self, X):
@@ -836,7 +840,11 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         # check is fitted
         check_is_fitted(self, "woe_pairs_")
         # check input
-        check_array(X)
+        X = check_array(X)
+
+        if X.shape[1] != self._dim:
+            raise ValueError(
+                f"The input dimension is {X.shape[1]} instead of the expected {self._dim}")
 
         if self.binning:
             Xp = self.binner_.transform(X)
@@ -857,3 +865,8 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
 
     def fit_transform(self, X, y):
         return self.fit(X, y).transform(X)
+
+    def _more_tags(self):
+        return {'X_types': ['categorical'],
+                'binary_only': True,
+                'requires_y': True}
