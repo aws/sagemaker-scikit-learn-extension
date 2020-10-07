@@ -620,3 +620,171 @@ class RobustOrdinalEncoder(OrdinalEncoder):
                 X_tr[unknown_mask, idx] = None
 
         return X_tr
+
+
+class ThresholdOrdinalEncoder(OrdinalEncoder):
+    """Encode categorical integer features as an integer array.
+
+    The input should be a 2D, array-like input of categorical features. Each column of categorical features will be
+    converted to ordinal integers. For a given column of n unique values, seen values will be mapped to integers 0 to
+    n-1 and unseen values will be mapped to the integer n. An unseen value is a value that was passed in during the
+    transform step, but not present in the fit step input.
+    This encoder supports inverse_transform, transforming ordinal integers back into categorical features. Unknown
+    integers are transformed to None. This encoder adds functionality to encode only if a category appears more than
+    ``threshold`` number of times. It also adds functionality to bound the number of categories per feature to
+    ``max_categories``. All categories that do not meet the ``threshold`` or exceed ``max_categories`` are encoded under
+     integer n as well. If ``max_categories`` is exceeded integer n will equal ``max_categories - 1``.
+
+    This transformer is an extension of ``OrdinalEncoder`` from the ``sklearn.preprocessing`` module.
+
+    Parameters
+    ----------
+    dtype : number type (default = np.float64)
+        Desired dtype of output.
+
+    threshold : float (default = max(10, n_features / 1000))
+        The threshold for encoding a value as its own label in the result. Default value is the maximum of `10` or
+        `n_features / 1000` where `n_features` is the number of columns of input X. How this parameter is interpreted
+        depends on whether it is more than or equal to or less than 1.
+
+        - If `threshold` is more than or equal to one, it represents the number of times a value must appear to be
+          one hot encoded in the result.
+
+        - If `threshold` is less than one, it represents the fraction of rows which must contain the value for it to be
+          one hot encoded in the result. The values is rounded up, so if `threshold` is 0.255 and there are 100 rows, a
+          value must appear at least 26 times to be included.
+
+    max_categories : int (default = 100)
+        Maximum number of categories to encode per feature. If the number of observed categories is greater than
+        ``max_categories``, the encoder will take the top ``max_categories - 1`` observed categories, sorted by count.
+        All remaining values will be encoded as the last category.
+
+    Attributes
+    ----------
+    categories_ : list of arrays
+        The categories of each feature determined during fitting (in order of the features in X and corresponding with
+        the output of ``transform``).
+
+    Examples
+    --------
+    Given a dataset with two features, we let the encoder find the unique values per feature and transform the data
+    to an ordinal encoding.
+    >>> from sagemaker_sklearn_extension.preprocessing import ThresholdOrdinalEncoder
+    >>> enc = ThresholdOrdinalEncoder(threshold=2)
+    >>> X = [['Male', 1], ['Female', 2], ['Female', 2], ['Female', 1]]
+    >>> enc.fit(X)
+    ThresholdOrdinalEncoder(threshold=1)
+    >>> enc.transform(X)
+    array([[1, 0],
+           [0, 1],
+           [0, 1],
+           [0, 0]])
+    >>> enc.inverse_transform([[1, 0], [0, 1], [0, 1], [0,1]])
+    array([[None, 1],
+           ['Female', 2],
+           ['Female', 2],
+           ['Female', 2]], dtype=object)
+    """
+
+    def __init__(self, dtype=np.float32, threshold=None, max_categories=100):
+        super(ThresholdOrdinalEncoder, self).__init__(categories="auto", dtype=dtype)
+        self.categories = []
+        self.dtype = dtype
+        self.threshold = threshold
+        self.max_categories = max_categories
+
+    def fit(self, X, y=None):
+        """Fit the RobustOrdinalEncoder to X.
+
+        Parameters
+        ----------
+        X : array-like, shape [n_samples, n_features]
+            The data to determine the categories of each feature.
+
+        Returns
+        -------
+        self
+
+        """
+        assert self.max_categories >= 1
+
+        X_columns, n_samples, n_features = self._check_X(X)
+
+        if not self.threshold:
+            threshold = max(10, n_samples / 1000)
+        elif self.threshold >= 1:
+            threshold = self.threshold
+        else:
+            threshold = ceil(self.threshold * n_samples)
+
+        for i in range(n_features):
+            items, counts = np.unique([X_columns[i]], return_counts=True)
+            pruned_categories = items[counts >= threshold].astype("O")
+            if pruned_categories.size == 0:
+                warnings.warn(
+                    "feature at index {} does not have any categories appearing more than {} {}".format(
+                        i, threshold, "time" if threshold == 1 else "times"
+                    )
+                )
+            if len(pruned_categories) >= self.max_categories:
+                most_freq_idxs = np.argsort(counts)[len(counts) - self.max_categories + 1 :]
+                pruned_categories = items[most_freq_idxs]
+            self.categories.append(sorted(pruned_categories))
+        self._fit(X, handle_unknown="ignore")
+        return self
+
+    def transform(self, X):
+        """Transform X to ordinal integers.
+
+        Parameters
+        ----------
+        X : array-like, shape [n_samples, n_features]
+            The data to encode.
+
+        Returns
+        -------
+        X_out : sparse matrix or a 2-d array
+            Transformed input.
+        """
+        check_is_fitted(self, "categories_")
+
+        X_out, X_mask = self._transform(X, handle_unknown="ignore")
+        for i in range(X_out.shape[1]):
+            feature_categories = self.categories_[i]
+            unknown_label = len(feature_categories)
+            X_out[~X_mask[:, i], i] = unknown_label
+        return X_out
+
+    def inverse_transform(self, X):
+        """Convert the data back to the original representation.
+        In slots where the encoding is that of an unrecognised category, category that did not meet the defined
+        ``threshold``, or category pruned by ``max_categories``, the output of the inverse transform is ``None``.
+
+        Parameters
+        ----------
+        X : array-like, shape [n_samples, n_encoded_features]
+            The transformed data.
+
+        Returns
+        -------
+        X_tr : array-like, shape [n_samples, n_features]
+            Inverse transformed array..
+        """
+        check_is_fitted(self, "categories_")
+        X = check_array(X, dtype="numeric", force_all_finite=True)
+
+        n_samples, _ = X.shape
+        n_features = len(self.categories_)
+        msg = "Shape of the passed X data is not correct. Expected {0} " "columns, got {1}."
+        if X.shape[1] != n_features:
+            raise ValueError(msg.format(n_features, X.shape[1]))
+
+        dt = np.find_common_type([cat.dtype for cat in self.categories_], [])
+        X_tr = np.empty((n_samples, n_features), dtype=dt)
+
+        for i in range(n_features):
+            labels = X[:, i].astype("int64", copy=False)
+            feature_categories = np.append(self.categories_[i], None)
+            X_tr[:, i] = feature_categories[labels]
+
+        return X_tr

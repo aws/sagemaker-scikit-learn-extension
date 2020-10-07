@@ -23,6 +23,7 @@ from .encoders import NALabelEncoder
 from .encoders import RobustLabelEncoder
 from .encoders import RobustOrdinalEncoder
 from .encoders import ThresholdOneHotEncoder
+from .encoders import ThresholdOrdinalEncoder
 
 __all__ = [
     "BaseExtremeValueTransformer",
@@ -31,6 +32,7 @@ __all__ = [
     "QuadraticFeatures",
     "QuantileExtremeValuesTransformer",
     "ThresholdOneHotEncoder",
+    "ThresholdOrdinalEncoder",
     "RemoveConstantColumnsTransformer",
     "RobustLabelEncoder",
     "RobustOrdinalEncoder",
