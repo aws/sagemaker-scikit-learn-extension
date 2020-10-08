@@ -628,7 +628,6 @@ class WOEAsserts(Enum):
     BINARY = "Weight-of-Evidence encoder is only supported for binary targets."
     BINNING = "Binning strategy must be in {'uniform', 'quantile', 'kmeans'}."
     NBINS = "Number of bins must be larger than 2."
-    DIMS_TRANSFORM = "The number of columns of `X` doesn't match the encoder."
     UNSEEN_CAT = "One or more category in the data was not seen at training time."
 
 
@@ -645,10 +644,6 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    feature_indices: list of integer indices (default=None)
-        Indices of the features to encode with WoE. If set to `None`, all features will be
-        encoded.
-
     binning: {'uniform', 'quantile', 'kmeans', None}, default=None
         What binning method to apply, no binning applied if set to None.
         This uses ScikitLearn's KBinsDiscretizer (see [2]).
@@ -721,8 +716,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
     [3] https://en.wikipedia.org/wiki/Additive_smoothing
     """
 
-    def __init__(self, feature_indices=None, binning=None, n_bins=10, alpha=0.5, laplace=False):
-        self.feature_indices = feature_indices
+    def __init__(self, binning=None, n_bins=10, alpha=0.5, laplace=False):
         self.binning = binning
         self.n_bins = n_bins
         self.alpha = alpha
