@@ -721,8 +721,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
     [3] https://en.wikipedia.org/wiki/Additive_smoothing
     """
 
-    def __init__(self, feature_indices=None, binning=None,
-                 n_bins=10, alpha=0.5, laplace=False):
+    def __init__(self, feature_indices=None, binning=None, n_bins=10, alpha=0.5, laplace=False):
         self.feature_indices = feature_indices
         self.binning = binning
         self.n_bins = n_bins
@@ -797,8 +796,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         """
         # Validate parameters
         if self.binning:
-            assert self.binning in ("uniform", "quantile", "kmeans"), \
-                WOEAsserts.BINNING
+            assert self.binning in ("uniform", "quantile", "kmeans"), WOEAsserts.BINNING
             assert self.n_bins >= 2, WOEAsserts.NBINS
         assert self.alpha >= 0, WOEAsserts.ALPHA
         # Validate data
@@ -815,18 +813,16 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
 
         # count the number of occurrences per target class and form the mask
         # for the rows for which y==0
-        mask_y_0 = (y == cat_y[0])
+        mask_y_0 = y == cat_y[0]
         count_y_0 = sum(mask_y_0)
 
         if self.binning:
-            self.binner_ = KBinsDiscretizer(n_bins=self.n_bins, strategy=self.binning,
-                                            encode="ordinal")
+            self.binner_ = KBinsDiscretizer(n_bins=self.n_bins, strategy=self.binning, encode="ordinal")
             Xp = self.binner_.fit_transform(X)
         else:
             Xp = X
         # go over each column and compute the woe
-        self.woe_pairs_ = \
-            list(map(lambda x: self._woe(x, count_y_0, mask_y_0, beta), Xp.T))
+        self.woe_pairs_ = list(map(lambda x: self._woe(x, count_y_0, mask_y_0, beta), Xp.T))
         return self
 
     def transform(self, X):
@@ -843,8 +839,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         X = check_array(X)
 
         if X.shape[1] != self._dim:
-            raise ValueError(
-                f"The input dimension is {X.shape[1]} instead of the expected {self._dim}")
+            raise ValueError(f"The input dimension is {X.shape[1]} instead of the expected {self._dim}")
 
         if self.binning:
             Xp = self.binner_.transform(X)
@@ -855,8 +850,7 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         for (i, x) in enumerate(Xp.T):
             codex, woe = self.woe_pairs_[i]
             # check that the data to encode doesn't have classes yet unseen
-            assert all([e in codex.keys() for e in np.unique(x)]), \
-                WOEAsserts.UNSEEN_CAT
+            assert all([e in codex.keys() for e in np.unique(x)]), WOEAsserts.UNSEEN_CAT
             # construct the encoded column by inverting the codex, if the category
             # is not recognised (not a key of the codex), a np.nan is inputted
             Xe[:, i] = np.array([woe[codex[xi]] for xi in x])
@@ -867,6 +861,4 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
         return self.fit(X, y).transform(X)
 
     def _more_tags(self):
-        return {'X_types': ['categorical'],
-                'binary_only': True,
-                'requires_y': True}
+        return {"X_types": ["categorical"], "binary_only": True, "requires_y": True}
