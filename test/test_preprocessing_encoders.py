@@ -19,6 +19,7 @@ from sagemaker_sklearn_extension.preprocessing import NALabelEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustOrdinalEncoder
+from sagemaker_sklearn_extension.preprocessing import WOEEncoder
 
 
 X = np.array([["hot dog", 1], ["hot dog", 1], ["apple", 2], ["hot dog", 3], ["hot dog", 1], ["banana", 3]])
@@ -254,3 +255,263 @@ def test_robust_ordinal_encoding_inverse_transform_floatkeys():
     assert reverse.dtype == object
     assert np.array_equal(data[1:], reverse[:-1])
     assert all([x is None for x in reverse[-1]])
+
+
+# first 50 rows of titanic dataset
+titanic_y = np.array(
+    [
+        0,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1,
+        1,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0,
+    ]
+)
+titanic_pclass = np.array(
+    [
+        3,
+        1,
+        3,
+        1,
+        3,
+        3,
+        1,
+        3,
+        3,
+        2,
+        3,
+        1,
+        3,
+        3,
+        3,
+        2,
+        3,
+        2,
+        3,
+        3,
+        2,
+        2,
+        3,
+        1,
+        3,
+        3,
+        3,
+        1,
+        3,
+        3,
+        1,
+        1,
+        3,
+        2,
+        1,
+        1,
+        3,
+        3,
+        3,
+        3,
+        3,
+        2,
+        3,
+        2,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+    ]
+)
+titanic_fare = np.array(
+    [
+        7.25,
+        71.2833,
+        7.925,
+        53.1,
+        8.05,
+        8.4583,
+        51.8625,
+        21.075,
+        11.1333,
+        30.0708,
+        16.7,
+        26.55,
+        8.05,
+        31.275,
+        7.8542,
+        16.0,
+        29.125,
+        13.0,
+        18.0,
+        7.225,
+        26.0,
+        13.0,
+        8.0292,
+        35.5,
+        21.075,
+        31.3875,
+        7.225,
+        263.0,
+        7.8792,
+        7.8958,
+        27.7208,
+        146.5208,
+        7.75,
+        10.5,
+        82.1708,
+        52.0,
+        7.2292,
+        8.05,
+        18.0,
+        11.2417,
+        9.475,
+        21.0,
+        7.8958,
+        41.5792,
+        7.8792,
+        8.05,
+        15.5,
+        7.75,
+        21.6792,
+        17.8,
+    ]
+)
+titanic_age = np.array(
+    [
+        22.0,
+        38.0,
+        26.0,
+        35.0,
+        35.0,
+        np.nan,
+        54.0,
+        2.0,
+        27.0,
+        14.0,
+        4.0,
+        58.0,
+        20.0,
+        39.0,
+        14.0,
+        55.0,
+        2.0,
+        np.nan,
+        31.0,
+        np.nan,
+        35.0,
+        34.0,
+        15.0,
+        28.0,
+        8.0,
+        38.0,
+        np.nan,
+        19.0,
+        np.nan,
+        np.nan,
+        40.0,
+        np.nan,
+        np.nan,
+        66.0,
+        28.0,
+        42.0,
+        np.nan,
+        21.0,
+        18.0,
+        14.0,
+        40.0,
+        27.0,
+        np.nan,
+        3.0,
+        19.0,
+        np.nan,
+        np.nan,
+        np.nan,
+        np.nan,
+        18.0,
+    ]
+)
+
+
+def test_woe_basic_comparison_skcontrib_no_smoothing():
+    SK_CONTRIB_0 = np.array([0.24116206, 0.26966357, 0.75198768])
+    enc = WOEEncoder(alpha=0)
+    xe = enc.fit_transform(titanic_pclass.reshape(-1, 1), titanic_y)
+    uv = np.sort(np.abs(np.unique(xe)))
+    assert np.allclose(uv, SK_CONTRIB_0)
+
+
+def test_woe_basic_comparison_skcontrib_laplace():
+    SK_CONTRIB_L = np.array([0.23180161, 0.26289463, 0.68378674])
+    enc = WOEEncoder(alpha=0.5, laplace=True)
+    xe = enc.fit_transform(titanic_pclass.reshape(-1, 1), titanic_y)
+    uv = np.sort(np.abs(np.unique(xe)))
+    assert np.allclose(uv, SK_CONTRIB_L)
+
+
+def test_woe_binning_quantile():
+    enc = WOEEncoder(binning="quantile", n_bins=4)
+    age = titanic_age.copy()
+    age[np.isnan(age)] = np.median(age[~np.isnan(age)])
+    xe = enc.fit_transform(age.reshape(-1, 1), titanic_y)
+    print(np.unique(xe))
+    assert len(np.unique(xe)) == 4
+
+
+def test_woe_binning_uniform():
+    enc = WOEEncoder(binning="uniform", n_bins=5, alpha=0.5)
+    xe = enc.fit_transform(titanic_fare.reshape(-1, 1), titanic_y)
+    assert len(np.unique(xe)) > 3
+
+
+def test_woe_multi_cols():
+    age = titanic_age.copy()
+    age[np.isnan(age)] = np.median(age[~np.isnan(age)])
+    X = np.vstack((age, titanic_fare)).T
+    enc = WOEEncoder(binning="quantile", n_bins=4)
+    Xe = enc.fit_transform(X, titanic_y)
+    assert len(np.unique(Xe[:, 0])) == 4
+    assert len(np.unique(Xe[:, 1])) == 4
