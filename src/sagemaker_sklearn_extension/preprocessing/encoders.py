@@ -477,6 +477,25 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         When unknown_as_nan is false, unknown values are transformed to n, where n-1 is the last category
         When unknown_as_nan is true, unknown values are transformed to np.nan
 
+    threshold : 'auto' or float, default = 1
+        The threshold for encoding a value as its own label in the result. Default value 1. If `threshold='auto'`, the
+        maximum of `10` or`n_features / 1000` where `n_features` is the number of columns of input X is calculated as
+        the `threshold`. How this parameter is interpreted depends on whether it is more than or equal to or less
+        than 1.
+
+        - If `threshold` is more than or equal to one, it represents the number of times a value must appear to be
+          one hot encoded in the result.
+
+        - If `threshold` is less than one, it represents the fraction of rows which must contain the value for it to be
+          one hot encoded in the result. The values is rounded up, so if `threshold` is 0.255 and there are 100 rows, a
+          value must appear at least 26 times to be included.
+
+    max_categories : int or np.inf, default = np.inf
+        Maximum number of categories to encode per feature. Default value is np.inf and does not place an upper bound on
+        the number of categories. If the number of observed categories is greater than ``max_categories``, the encoder
+        will take the top ``max_categories - 1`` observed categories, sorted by count. All remaining values will be
+        encoded as the last category.
+
 
     Attributes
     ----------
@@ -513,11 +532,17 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
     """
 
-    def __init__(self, categories="auto", dtype=np.float32, unknown_as_nan=False):
-        super(RobustOrdinalEncoder, self).__init__(categories=categories, dtype=dtype)
+    def __init__(self, categories="auto", dtype=np.float32, unknown_as_nan=False, threshold=1, max_categories=np.inf):
         self.categories = categories
         self.dtype = dtype
         self.unknown_as_nan = unknown_as_nan
+        self.threshold = threshold
+        self.max_categories = max_categories
+        if isinstance(max_categories, int) or threshold != 1:
+            super(RobustOrdinalEncoder, self).__init__(categories="auto", dtype=dtype)
+            self.categories = []
+        else:
+            super(RobustOrdinalEncoder, self).__init__(categories=categories, dtype=dtype)
 
     def fit(self, X, y=None):
         """Fit the RobustOrdinalEncoder to X.
@@ -532,10 +557,34 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         self
 
         """
-        # sklearn.preprocessing._BaseEncoder uses _categories due to deprecations in other classes
-        # can be removed once deprecations are removed
-        self._categories = self.categories
-        self._fit(X, handle_unknown="unknown")
+        if isinstance(self.max_categories, int) or self.threshold != 1:
+
+            assert self.max_categories >= 1
+            X_columns, n_samples, n_features = self._check_X(X)
+
+            if self.threshold == "auto":
+                threshold = max(10, n_samples / 1000)
+            elif self.threshold >= 1:
+                threshold = self.threshold
+            else:
+                threshold = ceil(self.threshold * n_samples)
+
+            for i in range(n_features):
+                dtype = X_columns[i].dtype
+                items, counts = np.unique(X_columns[i].astype(str), return_counts=True)
+                categories_to_encode = items[counts >= threshold]
+                if categories_to_encode.size == 0:
+                    warnings.warn(
+                        "feature at index {} does not have any categories appearing more than {} {}".format(
+                            i, threshold, "time" if threshold == 1 else "times"
+                        )
+                    )
+                if len(categories_to_encode) >= self.max_categories:
+                    most_freq_idxs = np.argsort(counts)[len(counts) - self.max_categories + 1 :]
+                    categories_to_encode = items[most_freq_idxs]
+                self.categories.append(np.sort(categories_to_encode.astype(dtype)))
+
+        self._fit(X, handle_unknown="ignore")
         return self
 
     def transform(self, X):
@@ -552,7 +601,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
             Transformed input.
 
         """
-        X_int, X_mask = self._transform(X, handle_unknown="unknown")
+        X_int, X_mask = self._transform(X, handle_unknown="ignore")
         if self.unknown_as_nan:
             # assign the unknowns np.nan
             X_int = X_int.astype(self.dtype, copy=False)

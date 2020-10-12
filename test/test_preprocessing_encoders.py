@@ -19,7 +19,6 @@ from sagemaker_sklearn_extension.preprocessing import NALabelEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustOrdinalEncoder
-from sagemaker_sklearn_extension.preprocessing import ThresholdOrdinalEncoder
 from sagemaker_sklearn_extension.preprocessing import WOEEncoder
 
 
@@ -215,11 +214,14 @@ def test_na_label_encoder(y, y_expected):
     np.testing.assert_array_equal(y_transform, y_expected)
 
 
-def test_robust_ordinal_encoding_categories():
-    encoder = RobustOrdinalEncoder()
+@pytest.mark.parametrize(
+    "threshold, expected", ([1, ordinal_expected_categories_], [2, [{"hot dog"}, {"1", "3"}, {"a", "b"}]])
+)
+def test_robust_ordinal_encoding_categories(threshold, expected):
+    encoder = RobustOrdinalEncoder(threshold=threshold)
     encoder.fit(ordinal_data)
     for i, cat in enumerate(encoder.categories_):
-        assert set(cat) == set(ordinal_expected_categories_[i])
+        assert set(cat) == set(expected[i])
 
 
 @pytest.mark.parametrize("unknown_as_nan", (True, False))
@@ -235,6 +237,33 @@ def test_robust_ordinal_encoding_transform(unknown_as_nan):
         assert all(list(encoded[-1] == 3))
 
 
+def test_robust_ordinal_encoding_transform_threshold():
+    # Test where some categories are below the threshold
+    encoder = RobustOrdinalEncoder(threshold=2)
+    encoder.fit(ordinal_data)
+    encoded = encoder.transform(ordinal_data)
+    assert all(list(encoded[:, 0] < 2))
+    assert all(list((encoded[:, 1:] < 3).reshape((-1,))))
+
+    # Test where some categories are below the threshold and new categories are introduced in transformation
+    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, np.nan]])], axis=0)
+    encoded = encoder.transform(test_data)
+    assert all(list(encoded[:, 0] < 2))
+    assert all(list((encoded[:, 1:] < 3).reshape((-1,))))
+
+
+def test_robust_ordinal_encoding_transform_max_categories():
+    data = np.array([[i for i in range(200)] + [i for i in range(150)] + [i for i in range(100)]]).T
+    encoder = RobustOrdinalEncoder(max_categories=100)
+    encoder.fit(data)
+    assert len(encoder.categories_[0]) == 99
+    assert all(list(encoder.categories_[0] <= 100))
+    encoded = encoder.transform(data)
+    cats, frequencies = np.unique(encoded, return_counts=True)
+    assert len(cats) == encoder.max_categories
+    assert sum(frequencies == 3) == 99
+
+
 @pytest.mark.parametrize("unknown_as_nan", (True, False))
 def test_robust_ordinal_encoding_inverse_transform(unknown_as_nan):
     encoder = RobustOrdinalEncoder(unknown_as_nan=unknown_as_nan)
@@ -244,6 +273,15 @@ def test_robust_ordinal_encoding_inverse_transform(unknown_as_nan):
     reverse = encoder.inverse_transform(encoded)
     assert np.array_equal(ordinal_data, reverse[:-1])
     assert all([x is None for x in reverse[-1]])
+
+    # Test where some categories are below the threshold
+    encoder = RobustOrdinalEncoder(unknown_as_nan=unknown_as_nan, threshold=2)
+    encoder.fit(test_data)
+    encoded = encoder.transform(test_data)
+    reverse = encoder.inverse_transform(encoded)
+    assert sum([i is None for i in reverse[:, 0]]) == 3
+    assert sum([i is None for i in reverse[:, 1]]) == 2
+    assert sum([i is None for i in reverse[:, 2]]) == 2
 
 
 def test_robust_ordinal_encoding_inverse_transform_floatkeys():
@@ -256,76 +294,6 @@ def test_robust_ordinal_encoding_inverse_transform_floatkeys():
     assert reverse.dtype == object
     assert np.array_equal(data[1:], reverse[:-1])
     assert all([x is None for x in reverse[-1]])
-
-
-def test_threshold_ordinal_encoding_categories():
-    # Test where all categories are within the threshold
-    encoder = ThresholdOrdinalEncoder(threshold=1)
-    encoder.fit(ordinal_data)
-    for i, cat in enumerate(encoder.categories_):
-        assert set(cat) == set(ordinal_expected_categories_[i])
-
-    # Test where some categories are below the threshold
-    encoder = ThresholdOrdinalEncoder(threshold=2)
-    encoder.fit(ordinal_data)
-    expected_categories = [{"hot dog"}, {"1", "3"}, {"a", "b"}]
-    for i, cat in enumerate(encoder.categories_):
-        assert set(cat) == set(expected_categories[i])
-
-
-def test_threshold_ordinal_encoding_transform():
-    # Test where all categories are within the threshold and new categories are introduced in transformation
-    encoder = ThresholdOrdinalEncoder(threshold=1)
-    encoder.fit(ordinal_data)
-    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, np.nan]])], axis=0)
-    encoded = encoder.transform(test_data)
-    assert all(list((encoded[:-1] < 3).reshape((-1,))))
-    for i in range(encoded.shape[1]):
-        assert encoded[-1, i] == len(encoder.categories_[i])
-
-    # Test where some categories are below the threshold
-    encoder = ThresholdOrdinalEncoder(threshold=2)
-    encoder.fit(ordinal_data)
-    encoded = encoder.transform(ordinal_data)
-    assert all(list(encoded[:, 0] < 2))
-    assert all(list((encoded[:, 1:] < 3).reshape((-1,))))
-
-    # Test where some categories are below the threshold and new categories are introduced in transformation
-    encoded = encoder.transform(test_data)
-    assert all(list(encoded[:, 0] < 2))
-    assert all(list((encoded[:, 1:] < 3).reshape((-1,))))
-
-
-def test_threshold_ordinal_encoding_inverse_transform():
-    # Test where all categories are within the threshold
-    encoder = ThresholdOrdinalEncoder(threshold=1)
-    encoder.fit(ordinal_data)
-    test_data = np.concatenate([ordinal_data, np.array([["waffle", 1213, np.nan]])], axis=0)
-    encoded = encoder.transform(test_data)
-    reverse = encoder.inverse_transform(encoded)
-    assert np.array_equal(ordinal_data, reverse[:-1])
-    assert all([x is None for x in reverse[-1]])
-
-    # Test where some categories are below the threshold
-    encoder = ThresholdOrdinalEncoder(threshold=2)
-    encoder.fit(test_data)
-    encoded = encoder.transform(test_data)
-    reverse = encoder.inverse_transform(encoded)
-    assert sum([i is None for i in reverse[:, 0]]) == 3
-    assert sum([i is None for i in reverse[:, 1]]) == 2
-    assert sum([i is None for i in reverse[:, 2]]) == 2
-
-
-def test_threshold_ordinal_encoding_max_categories():
-    data = np.array([[i for i in range(200)] + [i for i in range(150)] + [i for i in range(100)]]).T
-    encoder = ThresholdOrdinalEncoder(threshold=1, max_categories=100)
-    encoder.fit(data)
-    assert len(encoder.categories_[0]) == 99
-    assert all(list(encoder.categories_[0] <= 100))
-    encoded = encoder.transform(data)
-    cats, frequencies = np.unique(encoded, return_counts=True)
-    assert len(cats) == encoder.max_categories
-    assert sum(frequencies == 3) == 99
 
 
 # first 50 rows of titanic dataset
