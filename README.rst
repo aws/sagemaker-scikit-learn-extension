@@ -130,3 +130,4 @@ Overview of Submodules
    * :code:`RemoveConstantColumnsTransformer` removes constant columns
    * :code:`RobustLabelEncoder` encode labels for seen and unseen labels
    * :code:`RobustStandardScaler` standardization for dense and sparse inputs
+   * :code:`WOEEncoder` weight of evidence supervised encoder

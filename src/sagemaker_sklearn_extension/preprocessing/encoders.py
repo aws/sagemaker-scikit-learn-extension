@@ -13,13 +13,14 @@
 
 import warnings
 from math import ceil
+from enum import Enum
 
 import numpy as np
 
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder, KBinsDiscretizer
 from sklearn.preprocessing.label import _encode, _encode_check_unknown
-from sklearn.utils.validation import check_is_fitted, column_or_1d, _num_samples, check_array
+from sklearn.utils.validation import check_is_fitted, column_or_1d, _num_samples, check_array, check_X_y
 from sagemaker_sklearn_extension.impute import RobustImputer
 
 
@@ -788,3 +789,238 @@ class ThresholdOrdinalEncoder(OrdinalEncoder):
             X_tr[:, i] = feature_categories[labels]
 
         return X_tr
+
+
+class WOEAsserts(Enum):
+    ALPHA = "Regularization parameter `alpha` must be non-negative."
+    BINARY = "Weight-of-Evidence encoder is only supported for binary targets."
+    BINNING = "Binning strategy must be in {'uniform', 'quantile', 'kmeans'}."
+    NBINS = "Number of bins must be larger than 2."
+    UNSEEN_CAT = "One or more category in the data was not seen at training time."
+
+
+class WOEEncoder(BaseEstimator, TransformerMixin):
+    """Weight of Evidence (WoE) encoder: encodes categorical features as a numerical vector
+    using weight of evidence encoding. This is only supported with binary targets. Both the
+    features and the target are assumed to be free of missing values, missing values should
+    be handled separately before the encoding. A binning function can be provided to handle
+    numerical features which are then binned first then encoded.
+    Note that the sign of the weight of evidence values depends on the order in which the
+    categories of the target column are detected. This does not affect the performance of
+    any supervised model applied thereafter.
+    See [1] for more details on WoE.
+
+    Parameters
+    ----------
+    binning: {'uniform', 'quantile', 'kmeans', None}, default=None
+        What binning method to apply, no binning applied if set to None.
+        This uses ScikitLearn's KBinsDiscretizer (see [2]).
+        uniform: all bins in each feature have identical width.
+        quantile: all bins in each feature have the same number of points.
+        kmeans: values in each bin have the same nearest center of a 1D kmeans cluster.
+
+    n_bins: int (default=10), greater than 2
+        Number of bins to use when binning is applied.
+
+    alpha: float (default = 0.5), non-negative
+        Regularization value to avoid numerical errors due to division by zero in the
+        computation of the weight of evidence (e.g. in case the data points corresponding
+        to one category of a feature all have the same target value).
+
+    laplace: boolean (default = False)
+        If alpha is positive, adds Laplace smoothing to the computation of the weight of
+        evidence.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from sagemaker_sklearn_extension.preprocessing import WOEEncoder
+    >>> np.random.seed(112)
+    >>> N = 10
+    >>> y = np.random.choice([0, 1], size=N)
+    >>> y
+    array([0, 1, 0, 0, 1, 0, 1, 0, 1, 0])
+    >>> sex = np.random.choice(['m', 'f'], size=N)
+    >>> sex
+    array(['m', 'f', 'm', 'm', 'f', 'm', 'f', 'm', 'm', 'm'], dtype='<U1')
+    >>> WOEEncoder().fit_transform(sex.reshape(-1, 1), y)
+    array([[ 1.06087196],
+           [-2.35137526],
+           [ 1.06087196],
+           [ 1.06087196],
+           [-2.35137526],
+           [ 1.06087196],
+           [-2.35137526],
+           [ 1.06087196],
+           [ 1.06087196],
+           [ 1.06087196]])
+    >>> age = np.random.randint(low=25, high=95, size=N)
+    >>> age
+    array([54, 73, 76, 30, 53, 33, 28, 51, 62, 43])
+    >>> WOEEncoder(binning='quantile', n_bins=2).fit_transform(age.reshape(-1, 1), y)
+    array([[-0.74193734],
+           [-0.74193734],
+           [-0.74193734],
+           [ 0.69314718],
+           [-0.74193734],
+           [ 0.69314718],
+           [ 0.69314718],
+           [ 0.69314718],
+           [-0.74193734],
+           [ 0.69314718]])
+
+    Attributes
+    ----------
+    binner_: estimator trained to bin numerical data if binning is not None.
+
+    woe_pairs_: list of pairs (codex, woe) of size n_encoded_features
+        The codex has the mapping feature_value => woe_index and woe has the weight of
+        evidence values.
+
+    References
+    ----------
+    [1] https://www.listendata.com/2015/03/weight-of-evidence-woe-and-information.html
+    [2] https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.KBinsDiscretizer.html
+    [3] https://en.wikipedia.org/wiki/Additive_smoothing
+    """
+
+    def __init__(self, binning=None, n_bins=10, alpha=0.5, laplace=False):
+        self.binning = binning
+        self.n_bins = n_bins
+        self.alpha = alpha
+        self.laplace = laplace
+
+    def _woe(self, x, count_y_0, mask_y_0, beta):
+        """Return the categories for a feature vector `x` as well as the corresponding
+        weight of evidence value for each of those categories.
+
+        Parameters
+        ----------
+        x: vector, shape (n_samples,)
+            Feature vector to encode.
+        count_y: list of length 2
+            List of counts for the number of observations with the first (resp. the second)
+            target category.
+        mask_y_0: vector, shape (n_samples,)
+            Mask of observations with the first target category.
+        beta: float
+            Value to use for Laplace Smoothing (0 if laplace is False).
+        """
+        cat_x = np.unique(x)
+        mask_y_1 = np.logical_not(mask_y_0)
+        count_y_1 = len(mask_y_0) - count_y_0
+
+        # Computation of the Weight of Evidence for a category c in cat_x and with
+        # regularization α
+        #
+        #   woe_c = log( { #(y==0 | c) + α / #(y==1 | c)  + α } *
+        #                { #(y==1) + β / #(y==0) + β } )
+        #
+        # where β = 2α if laplace == True, 0 otherwise. The second factor can be computed
+        # once, call it `r10` then
+        #
+        #   woe_c = log( r10 * ratio(c) )
+        #
+        # where
+        #
+        #   ratio(c) = { #(y==0 | c) + α } / { #(y==1 | x==c) + α }
+        #
+
+        def ratio(c):
+            x_c = x == c
+            # retrieve the number of (y == 0 | x == c) and same for y == 1
+            y_0_c = sum(np.logical_and(mask_y_0, x_c))
+            y_1_c = sum(np.logical_and(mask_y_1, x_c))
+            # compute the ratio with regularization for 0 events
+            return (y_0_c + self.alpha) / (y_1_c + self.alpha)
+
+        # computation of woe possibly using Laplace smoothing (beta factor)
+        r10 = (count_y_1 + beta) / (count_y_0 + beta)
+        woe = np.log(r10 * np.array([ratio(c) for c in cat_x]))
+        # encoder from unique values of x to index
+        codex = {c: i for (i, c) in enumerate(cat_x)}
+        return (codex, woe)
+
+    def fit(self, X, y):
+        """Fit Weight of Evidence encoder to `X` and `y`.
+
+        Parameters
+        ----------
+        X: array-like, shape (n_samples, n_features)
+            The data to encode.
+
+        y: array-like, shape (n_samples,)
+            The binary target vector.
+
+        Returns
+        -------
+        self: WOEEncoder.
+        """
+        # Validate parameters
+        if self.binning:
+            assert self.binning in ("uniform", "quantile", "kmeans"), WOEAsserts.BINNING
+            assert self.n_bins >= 2, WOEAsserts.NBINS
+        assert self.alpha >= 0, WOEAsserts.ALPHA
+        # Validate data
+        X, y = check_X_y(X, y)
+        # Keep track of number of features encoded
+        self._dim = X.shape[1]
+        # recover the target categories and check there's only two
+        cat_y = np.unique(y)
+        # it should be == 2 but relax to <= 2 for a single-sample test by check_estimator
+        assert len(cat_y) <= 2, WOEAsserts.BINARY
+
+        # value for laplace smoothing
+        beta = 2 * self.alpha * self.laplace
+
+        # count the number of occurrences per target class and form the mask
+        # for the rows for which y==0
+        mask_y_0 = y == cat_y[0]
+        count_y_0 = sum(mask_y_0)
+
+        if self.binning:
+            self.binner_ = KBinsDiscretizer(n_bins=self.n_bins, strategy=self.binning, encode="ordinal")
+            Xp = self.binner_.fit_transform(X)
+        else:
+            Xp = X
+        # go over each column and compute the woe
+        self.woe_pairs_ = list(map(lambda x: self._woe(x, count_y_0, mask_y_0, beta), Xp.T))
+        return self
+
+    def transform(self, X):
+        """Transform each column of `X` using the Weight-of-Evidence encoding.
+
+        Returns
+        -------
+        X_encoded: array, shape (n_samples, n_encoded_features)
+            Array with each of the encoded columns.
+        """
+        # check is fitted
+        check_is_fitted(self, "woe_pairs_")
+        # check input
+        X = check_array(X)
+
+        if X.shape[1] != self._dim:
+            raise ValueError(f"The input dimension is {X.shape[1]} instead of the expected {self._dim}")
+
+        if self.binning:
+            Xp = self.binner_.transform(X)
+        else:
+            Xp = X
+
+        Xe = np.zeros(Xp.shape)
+        for (i, x) in enumerate(Xp.T):
+            codex, woe = self.woe_pairs_[i]
+            # check that the data to encode doesn't have classes yet unseen
+            assert all([e in codex.keys() for e in np.unique(x)]), WOEAsserts.UNSEEN_CAT
+            # construct the encoded column by inverting the codex, if the category
+            # is not recognised (not a key of the codex), a np.nan is inputted
+            Xe[:, i] = np.array([woe[codex[xi]] for xi in x])
+
+        return Xe
+
+    def fit_transform(self, X, y):
+        return self.fit(X, y).transform(X)
+
+    def _more_tags(self):
+        return {"X_types": ["categorical"], "binary_only": True, "requires_y": True}
