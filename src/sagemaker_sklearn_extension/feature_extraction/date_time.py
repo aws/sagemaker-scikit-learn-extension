@@ -38,17 +38,57 @@ class DateTimeProperty:
         self.extract_func = extract_func
 
 
+def extract_week_of_year(t):
+    return t.isocalendar()[1] if isinstance(t, datetime) else np.nan
+
+
+def extract_weekday(t):
+    return t.isocalendar()[2] if isinstance(t, datetime) else np.nan
+
+
+def extract_year(t):
+    return t.year if isinstance(t, datetime) else np.nan
+
+
+def extract_hour(t):
+    return t.hour if isinstance(t, datetime) else np.nan
+
+
+def extract_month(t):
+    return t.month if isinstance(t, datetime) else np.nan
+
+
+def extract_minute(t):
+    return t.minute if isinstance(t, datetime) else np.nan
+
+
+def extract_quarter(t):
+    return (t.month - 1) // 3 + 1 if isinstance(t, datetime) else np.nan
+
+
+def extract_second(t):
+    return t.second if isinstance(t, datetime) else np.nan
+
+
+def extract_day_of_year(t):
+    return t.timetuple().tm_yday if isinstance(t, datetime) else np.nan
+
+
+def extract_day_of_month(t):
+    return t.day if isinstance(t, datetime) else np.nan
+
+
 class DateTimeDefinition(Enum):
-    WEEK_OF_YEAR = DateTimeProperty(lambda t: t.isocalendar()[1] if isinstance(t, datetime) else np.nan, 53, 1)
-    WEEKDAY = DateTimeProperty(lambda t: t.isocalendar()[2] if isinstance(t, datetime) else np.nan, 7, 1)
-    YEAR = DateTimeProperty(lambda t: t.year if isinstance(t, datetime) else np.nan, None, None)
-    HOUR = DateTimeProperty(lambda t: t.hour if isinstance(t, datetime) else np.nan, 23, 0)
-    MONTH = DateTimeProperty(lambda t: t.month if isinstance(t, datetime) else np.nan, 12, 1)
-    MINUTE = DateTimeProperty(lambda t: t.minute if isinstance(t, datetime) else np.nan, 59, 0)
-    QUARTER = DateTimeProperty(lambda t: (t.month - 1) // 3 + 1 if isinstance(t, datetime) else np.nan, 4, 1)
-    SECOND = DateTimeProperty(lambda t: t.second if isinstance(t, datetime) else np.nan, 59, 0)
-    DAY_OF_YEAR = DateTimeProperty(lambda t: t.timetuple().tm_yday if isinstance(t, datetime) else np.nan, 366, 1)
-    DAY_OF_MONTH = DateTimeProperty(lambda t: t.day if isinstance(t, datetime) else np.nan, 31, 1)
+    WEEK_OF_YEAR = DateTimeProperty(extract_week_of_year, 53, 1)
+    WEEKDAY = DateTimeProperty(extract_weekday, 7, 1)
+    YEAR = DateTimeProperty(extract_year, None, None)
+    HOUR = DateTimeProperty(extract_hour, 23, 0)
+    MONTH = DateTimeProperty(extract_month, 12, 1)
+    MINUTE = DateTimeProperty(extract_minute, 59, 0)
+    QUARTER = DateTimeProperty(extract_quarter, 4, 1)
+    SECOND = DateTimeProperty(extract_second, 59, 0)
+    DAY_OF_YEAR = DateTimeProperty(extract_day_of_year, 366, 1)
+    DAY_OF_MONTH = DateTimeProperty(extract_day_of_month, 31, 1)
 
 
 class DateTimeVectorizer(BaseEstimator, TransformerMixin):
