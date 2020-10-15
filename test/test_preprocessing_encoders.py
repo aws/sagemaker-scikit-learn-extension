@@ -272,10 +272,10 @@ def test_robust_ordinal_encoding_transform_max_categories():
 
     # Test where number of categories is equal to max categories
     encoder = RobustOrdinalEncoder(max_categories=2)
-    encoder.fit(np.array([['x', 'y'], ['y', 'x']]))
+    encoder.fit(np.array([["x", "y"], ["y", "x"]]))
     assert len(encoder.categories_[0]) == 2
     assert len(encoder.categories_[1]) == 2
-    encoded = encoder.transform([['x', 'y'], ['z', 'z']])
+    encoded = encoder.transform([["x", "y"], ["z", "z"]])
     assert np.all(encoded[1] == 2)
     assert np.all(encoded[0] == [0, 1])
 
