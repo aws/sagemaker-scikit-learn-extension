@@ -505,6 +505,10 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         (in order of the features in X and corresponding with the output
         of ``transform``).
 
+    feature_idxs_no_categories_ : list of ints
+        A list of indexes of features who have no categories with a frequency
+        greater than or equal to the value of ``threshold``.
+
     Examples
     --------
     Given a dataset with two features, we let the encoder find the unique
@@ -558,7 +562,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
         assert self.max_categories >= 1
 
-        self.features_completely_under_threshold_ = []
+        self.feature_idxs_no_categories_ = []
 
         if isinstance(self.max_categories, int) or self.threshold != 1:
             X_columns, n_samples, n_features = self._check_X(X)
@@ -583,7 +587,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
                     # If no category is above the threshold, create an unknown category to prevent
                     # self._transform() from raising an IndexError
                     categories_to_encode = np.array(["unknown"])
-                    self.features_completely_under_threshold_.append(i)
+                    self.feature_idxs_no_categories_.append(i)
                 if len(categories_to_encode) > self.max_categories:
                     most_freq_idxs = np.argsort(counts)[len(counts) - self.max_categories :]
                     categories_to_encode = items[most_freq_idxs]
@@ -610,7 +614,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
             # assign the unknowns np.nan
             X_int = X_int.astype(self.dtype, copy=False)
             X_int[~X_mask] = np.nan
-            X_int[:, self.features_completely_under_threshold_] = np.nan
+            X_int[:, self.feature_idxs_no_categories_] = np.nan
         else:
             # assign the unknowns an integer indicating they are unknown. The largest integer is always reserved for
             # unknowns
@@ -618,7 +622,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
                 mask = X_mask[:, col]
                 X_int[~mask, col] = self.categories_[col].shape[0]
             X_int = X_int.astype(self.dtype, copy=False)
-            X_int[:, self.features_completely_under_threshold_] = 0
+            X_int[:, self.feature_idxs_no_categories_] = 0
         return X_int
 
     def inverse_transform(self, X):
@@ -674,7 +678,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
             for idx, unknown_mask in found_unknown.items():
                 X_tr[unknown_mask, idx] = None
 
-        X_tr[:, self.features_completely_under_threshold_] = None
+        X_tr[:, self.feature_idxs_no_categories_] = None
 
         return X_tr
 

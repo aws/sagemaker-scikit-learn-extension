@@ -254,7 +254,7 @@ def test_robust_ordinal_encoding_transform_threshold():
     # Test where all categories are below the threshold
     encoder = RobustOrdinalEncoder(threshold=10)
     encoder.fit(ordinal_data)
-    assert len(encoder.features_completely_under_threshold_) == 3
+    assert len(encoder.feature_idxs_no_categories_) == 3
     encoded = encoder.transform(test_data)
     assert np.all(encoded == 0)
 
