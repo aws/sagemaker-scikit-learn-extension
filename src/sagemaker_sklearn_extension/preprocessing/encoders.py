@@ -477,6 +477,26 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         When unknown_as_nan is false, unknown values are transformed to n, where n-1 is the last category
         When unknown_as_nan is true, unknown values are transformed to np.nan
 
+    threshold : 'auto' or float, default = 1
+        The threshold for encoding a value as its own label in the result. Default value 1. If `threshold='auto'`, the
+        maximum of `10` or`n_features / 1000` where `n_features` is the number of columns of input X is calculated as
+        the `threshold`. How this parameter is interpreted depends on whether it is more than or equal to or less
+        than 1.
+
+        - If `threshold` is more than or equal to one, it represents the number of times a value must appear to be
+          one hot encoded in the result.
+
+        - If `threshold` is less than one, it represents the fraction of rows which must contain the value for it to be
+          one hot encoded in the result. The values is rounded up, so if `threshold` is 0.255 and there are 100 rows, a
+          value must appear at least 26 times to be included.
+
+    max_categories : int or np.inf, default = np.inf
+        Maximum number of categories to encode per feature. Default value is np.inf and does not place an upper bound on
+        the number of categories. If the number of observed categories is greater than ``max_categories``, the encoder
+        will take the top ``max_categories`` observed categories, sorted by count. All remaining values will be
+        encoded as the last category. Note this means that the number of categories will be ``max_categories + 1``.
+        In the case of a tie between categories, the category whose label is higher will be chosen.
+
 
     Attributes
     ----------
@@ -484,6 +504,10 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         The categories of each feature determined during fitting
         (in order of the features in X and corresponding with the output
         of ``transform``).
+
+    feature_idxs_no_categories_ : list of ints
+        A list of indexes of features who have no categories with a frequency
+        greater than or equal to the value of ``threshold``.
 
     Examples
     --------
@@ -513,11 +537,13 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
     """
 
-    def __init__(self, categories="auto", dtype=np.float32, unknown_as_nan=False):
+    def __init__(self, categories="auto", dtype=np.float32, unknown_as_nan=False, threshold=1, max_categories=np.inf):
         super(RobustOrdinalEncoder, self).__init__(categories=categories, dtype=dtype)
         self.categories = categories
         self.dtype = dtype
         self.unknown_as_nan = unknown_as_nan
+        self.threshold = threshold
+        self.max_categories = max_categories
 
     def fit(self, X, y=None):
         """Fit the RobustOrdinalEncoder to X.
@@ -532,10 +558,41 @@ class RobustOrdinalEncoder(OrdinalEncoder):
         self
 
         """
-        # sklearn.preprocessing._BaseEncoder uses _categories due to deprecations in other classes
-        # can be removed once deprecations are removed
-        self._categories = self.categories
-        self._fit(X, handle_unknown="unknown")
+        self._fit(X, handle_unknown="ignore")
+
+        assert self.max_categories >= 1
+
+        self.feature_idxs_no_categories_ = []
+
+        if isinstance(self.max_categories, int) or self.threshold != 1:
+            X_columns, n_samples, n_features = self._check_X(X)
+
+            if self.threshold == "auto":
+                threshold = max(10, n_samples / 1000)
+            elif self.threshold >= 1:
+                threshold = self.threshold
+            else:
+                threshold = ceil(self.threshold * n_samples)
+
+            for i in range(n_features):
+                dtype = X_columns[i].dtype
+                items, counts = np.unique(X_columns[i].astype(str), return_counts=True)
+                categories_to_encode = items[counts >= threshold].astype("O")
+                if categories_to_encode.size == 0:
+                    warnings.warn(
+                        "feature at index {} does not have any categories appearing more than {} {}".format(
+                            i, threshold, "time" if threshold == 1 else "times"
+                        )
+                    )
+                    # If no category is above the threshold, create an unknown category to prevent
+                    # self._transform() from raising an IndexError
+                    categories_to_encode = np.array(["unknown"])
+                    self.feature_idxs_no_categories_.append(i)
+                if len(categories_to_encode) > self.max_categories:
+                    most_freq_idxs = np.argsort(counts)[len(counts) - self.max_categories :]
+                    categories_to_encode = items[most_freq_idxs]
+                self.categories_[i] = np.sort(categories_to_encode.astype(dtype))
+
         return self
 
     def transform(self, X):
@@ -552,11 +609,12 @@ class RobustOrdinalEncoder(OrdinalEncoder):
             Transformed input.
 
         """
-        X_int, X_mask = self._transform(X, handle_unknown="unknown")
+        X_int, X_mask = self._transform(X, handle_unknown="ignore")
         if self.unknown_as_nan:
             # assign the unknowns np.nan
             X_int = X_int.astype(self.dtype, copy=False)
             X_int[~X_mask] = np.nan
+            X_int[:, self.feature_idxs_no_categories_] = np.nan
         else:
             # assign the unknowns an integer indicating they are unknown. The largest integer is always reserved for
             # unknowns
@@ -564,7 +622,7 @@ class RobustOrdinalEncoder(OrdinalEncoder):
                 mask = X_mask[:, col]
                 X_int[~mask, col] = self.categories_[col].shape[0]
             X_int = X_int.astype(self.dtype, copy=False)
-
+            X_int[:, self.feature_idxs_no_categories_] = 0
         return X_int
 
     def inverse_transform(self, X):
@@ -619,6 +677,8 @@ class RobustOrdinalEncoder(OrdinalEncoder):
 
             for idx, unknown_mask in found_unknown.items():
                 X_tr[unknown_mask, idx] = None
+
+        X_tr[:, self.feature_idxs_no_categories_] = None
 
         return X_tr
 
