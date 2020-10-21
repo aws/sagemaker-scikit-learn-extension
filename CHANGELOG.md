@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.1.0 (2020-10-21)
+
+### Features
+
+ * adds threshold and max_categories parameter to RobustOrdinalEncoder
+ * Add weight of evidence encoder
+
+### Bug fixes and other changes
+
+ * use named functions instead of lambdas in DateTimeDefintions because of pickle
+
 ## v2.0.0 (2020-08-13)
 
 ### Breaking changes
