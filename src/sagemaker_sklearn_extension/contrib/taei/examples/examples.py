@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 import imblearn.datasets
 from imblearn.over_sampling import SMOTE
 from .smote_variants import polynom_fit_SMOTE
