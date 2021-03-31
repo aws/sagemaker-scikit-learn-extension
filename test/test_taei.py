@@ -1,8 +1,7 @@
 import numpy as np
 import torch
 from imblearn.over_sampling import SMOTE
-from sagemaker_sklearn_extension.contrib.taei.src.latent_space_oversampler import LatentSpaceOversampler
-from sagemaker_sklearn_extension.contrib.taei.src.models import AE, VAE
+from sagemaker_sklearn_extension.contrib.taei import LatentSpaceOversampler, AE, VAE
 
 
 def test_latent_space_oversampler():

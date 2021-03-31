@@ -2,9 +2,8 @@ import numpy as np
 import torch
 import imblearn.datasets
 from imblearn.over_sampling import SMOTE
-from smote_variants import polynom_fit_SMOTE
-from src.latent_space_oversampler import LatentSpaceOversampler
-from src.models import AE, VAE
+from .smote_variants import polynom_fit_SMOTE
+from sagemaker_sklearn_extension.contrib.taei import LatentSpaceOversampler, AE, VAE
 
 
 def main():
