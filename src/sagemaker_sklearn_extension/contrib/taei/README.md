@@ -3,9 +3,8 @@
 TAEI contains implementations of the latent space minority oversampling techniques proposed in [1]
 
 ## Installation
-
+Install from pip
 ```
-# install from pip
 pip install sagemaker-scikit-learn-extension[taei]
 
 # For Zsh users: 
@@ -33,7 +32,7 @@ continuous_features = [3, 4, 5, 6, 7, 8, 9]
 ```
 
 ### Vanilla autoencoder + SMOTE
-We start with and example of wrapping SMOTE with a vanilla autoencoder
+We start with an example of wrapping SMOTE with a vanilla autoencoder
 ```python
 from imblearn.over_sampling import SMOTE
 from sagemaker_sklearn_extension.contrib.taei import LatentSpaceOversampler, AE
@@ -51,13 +50,13 @@ Note that the base oversampler, SMOTE in our case, controls the number of minori
 
 We train the autoencoder on the training data before using the oversampler 
 ```python
-ae_smote.fit(d["data"], d["target"], verbose=True)
+ae_smote.fit(X=d["data"], y=d["target"], verbose=True)
 ```
 
 Finally, we can oversample the minority class 
 ```python
 # Oversample the minority class
-X_os, y_os = ae_smote.resample(d["data"], d["target"], verbose=True)
+X_os, y_os = ae_smote.resample(X=d["data"], y=d["target"], verbose=True)
 ```
 
 ### Variational autoencoder + PolynomFit
@@ -76,7 +75,7 @@ vae_poly = LatentSpaceOversampler(
     base_oversampler=polynom_fit_SMOTE(proportion=1.0).sample
 )
 # Train the model and oversample in a single function call
-X_os, y_os = vae_poly.fit_resample(d['data'], d['target'], verbose=True)
+X_os, y_os = vae_poly.fit_resample(X=d['data'], y=d['target'], verbose=True)
 ```
 
 ## References
