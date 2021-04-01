@@ -28,6 +28,9 @@ phases:
       # run unit tests
       - tox -e py37
 
+      # run unit tests for contrib
+      - tox -e contrib_taei_py37
+
       # generate distribution package
       - python3 setup.py sdist
 

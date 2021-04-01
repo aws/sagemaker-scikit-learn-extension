@@ -24,6 +24,12 @@ def read_version():
     return read("VERSION").strip()
 
 
+EXTRAS_REQUIRE = {
+    "test": ["tox", "tox-conda", "pytest", "coverage"],
+    "taei": ["torch==1.7.1"],
+}
+
+
 setup(
     name="sagemaker-scikit-learn-extension",
     version=read_version(),
@@ -36,5 +42,5 @@ setup(
     license="Apache License 2.0",
     keywords="ML Amazon AWS AI SKLearn Scikit-Learn",
     classifiers=["Development Status :: 4 - Beta", "License :: OSI Approved :: Apache Software License"],
-    extras_require={"test": ["tox", "tox-conda", "pytest", "coverage"]},
+    extras_require=EXTRAS_REQUIRE,
 )
