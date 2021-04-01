@@ -11,20 +11,21 @@ multi-modal data. These oversamplers work by
 3. Mapping the synthetic samples back to the original feature space
 
 This framework was shown to be effective in generating high-quality multi-modal synthetic data which then resulted in 
-better prediction quality for downstream tasks. 
+better prediction quality for downstream tasks.
 
 #### LatentSpaceOversampler
-The interpolator is implemented by the class `LatentSpaceOversampler` which takes two inputs:
-- `model` - This is the autoencoder used to map the samples to the latent space and back. Currently, two 
+The interpolator is implemented by `LatentSpaceOversampler` which takes two inputs:
+- `model` - The autoencoder used to map the samples to the latent space and back. Currently, two 
 autoencoders are provided with the package: `AE` which is a vanilla autoencoder and `VAE` which is a variational 
 autoencoder.
-- `base_oversampler` - The oversampler applied in the latent space. No oversamplers are provided with this package. We have 
-experimented with `SMOTE` from [imbalanced-learn](https://github.com/scikit-learn-contrib/imbalanced-learn) and `polynom_fit_SMOTE` from 
+- `base_oversampler` (function) - The oversampling function applied in the latent space. No oversamplers are provided 
+with this package. We have experimented with `SMOTE` from 
+[imbalanced-learn](https://github.com/scikit-learn-contrib/imbalanced-learn) and `polynom_fit_SMOTE` from 
 [smote_variants](https://github.com/analyticalmindsltd/smote_variants). Note that the base oversampler controls the 
 number of minority samples generated
 
 ## Installation
-Install from pip
+It is recommended to install from PyPI
 ```
 pip install sagemaker-scikit-learn-extension[taei]
 
@@ -33,16 +34,17 @@ pip install sagemaker-scikit-learn-extension\[taei]\
 ```
 
 ## Examples
-[imbalanced-learn](https://github.com/scikit-learn-contrib/imbalanced-learn) is required to run the examples below as it provides the dataset and the base oversampler. 
-Smote-variants is used for polynom_fit_SMOTE which yield superior prediction quality in our experiments. Install these 
-packages by
+[imbalanced-learn](https://github.com/scikit-learn-contrib/imbalanced-learn) is required to run the examples below as 
+it provides the dataset and the base oversampler. [smote_variants](https://github.com/analyticalmindsltd/smote_variants)
+is used for polynom_fit_SMOTE which yield superior prediction quality in our experiments. Install these packages by
 ```
 pip install imbalanced-learn==0.7 smote-variants
 ```
 
 TAEI supports input of either a numpy.ndarray or a pandas.DataFrame object with two types of columns:
 - Continuous columns: numeric values, can have very large cardinality
-- Discrete (categorical) columns: numeric or string values with low cardinality
+- Discrete (categorical) columns: numeric values with low cardinality. These columns need be encoded to ordinal integers
+before using TAEI. This could be easily done using `sagemaker_sklearn_extension.preprocessing.OrdinalEncoder`
 
 Next we load the dataset from [imbalanced-learn](https://github.com/scikit-learn-contrib/imbalanced-learn) and specify 
 which columns are continuous and which are discrete
@@ -74,8 +76,6 @@ ae_smote = LatentSpaceOversampler(
     base_oversampler=SMOTE(sampling_strategy=0.5).fit_resample,
 )
 ```
-Note that the base oversampler, SMOTE in our case, controls the number of minority samples generated
-
 We train the autoencoder on the training data before using the oversampler
 ```python
 ae_smote.fit(X=d["data"], y=d["target"], verbose=True)
@@ -86,6 +86,7 @@ Finally, we can oversample the minority class
 # Oversample the minority class
 X_oversampled, y_oversampled = ae_smote.resample(X=d["data"], y=d["target"], verbose=True)
 ```
+Note that the base oversampler, SMOTE in our case, controls the number of minority samples generated
 
 ### Variational autoencoder + PolynomFit
 We demonstrate PolynomFit[2] wrapped by a variational autoencoder, a combination yielding superior prediction quality 
