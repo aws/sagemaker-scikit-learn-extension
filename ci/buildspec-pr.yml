@@ -6,7 +6,7 @@ phases:
 
   build:
     commands:
-      - apt install libtbb-dev
+      - sudo apt-get install libtbb-dev
 
       # install tox
       - pip install tox tox-conda
