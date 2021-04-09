@@ -1,11 +1,8 @@
 version: 0.2
 
 phases:
-  build:
+  install:
     commands:
-      # install tox
-      - pip install tox tox-conda
-
       # install brew for tbb dependency
       - curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh > /tmp/install.sh
       - cat /tmp/install.sh
@@ -15,7 +12,14 @@ phases:
       - adduser brewuser sudo
       - /bin/su -c /tmp/install.sh - brewuser
       - /bin/su -c '/home/brewuser/.linuxbrew/bin/brew install tbb' - brewuser
+      
+
+  build:
+    commands:
       - PATH=/home/brewuser/.linuxbrew/bin:$PATH
+
+      # install tox
+      - pip install tox tox-conda
 
       # run linters, format verification, and package checks
       - start_time=`date +%s`
