@@ -6,6 +6,10 @@ phases:
       # run git-secrets
       - git-secrets --scan-history
 
+      # install tbb dependency
+      - apt update -y
+      - apt-get install -y libtbb-dev
+
       # install tox
       - pip install tox tox-conda
 
