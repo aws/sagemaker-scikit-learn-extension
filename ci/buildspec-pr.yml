@@ -10,6 +10,7 @@ phases:
       - useradd -m brewuser
       - echo "brewuser:brewuser" | chpasswd 
       - adduser brewuser sudo
+      - chown -R $(whoami) $(brew --prefix)/*
       - /bin/su -c /tmp/install.sh - brewuser
       - /bin/su -c '/home/brewuser/.linuxbrew/bin/brew install tbb' - brewuser
       
