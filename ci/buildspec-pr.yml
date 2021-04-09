@@ -3,6 +3,10 @@ version: 0.2
 phases:
   build:
     commands:
+      # install tbb dependency
+      - apt update -y
+      - apt-get install -y libtbb-dev
+
       # install tox
       - pip install tox tox-conda
 

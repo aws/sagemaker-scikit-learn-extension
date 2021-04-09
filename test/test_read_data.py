@@ -22,7 +22,6 @@ import pytest
 
 from mlio import list_files
 from mlio import InMemoryStore, SageMakerPipe
-from mlio import InvalidInstanceError
 from mlio import File as mlio_file
 from sagemaker_sklearn_extension.externals.read_data import _convert_megabytes_to_bytes
 from sagemaker_sklearn_extension.externals.read_data import _get_data
@@ -175,7 +174,7 @@ def test_get_reader_incorrect_path():
 
 
 def test_read_csv_data_invalid_csv():
-    with pytest.raises(InvalidInstanceError):
+    with pytest.raises(RuntimeError):
         read_csv_data(source="test/data/csv/invalid.csv")
 
 
