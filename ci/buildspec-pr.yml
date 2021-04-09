@@ -7,7 +7,7 @@ phases:
       - pip install tox tox-conda
 
       # install brew for tbb dependency
-      - curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install.sh > /tmp/install.sh
+      - curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh > /tmp/install.sh
       - cat /tmp/install.sh
       - chmod +x /tmp/install.sh
       - useradd -m brewuser
