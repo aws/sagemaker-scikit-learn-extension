@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.2.0 (2021-04-13)
+
+### Features
+
+ * taei contrib library
+
+### Bug fixes and other changes
+
+ * broken tests and dependencies
+
 ## v2.1.0 (2020-10-21)
 
 ### Features
