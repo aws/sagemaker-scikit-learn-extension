@@ -11,6 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
+from datetime import datetime
 import numpy as np
 import pytest
 
@@ -187,3 +188,25 @@ def test_fit_transform_accepts_mixed_str_datetime():
     assert all(np.isnan(processed[-1]))
     assert not any(np.isnan(processed[-4]))
     assert not any(np.isnan(processed[0]))
+
+
+def test_fit_transform_default_datetime():
+    cur_data_array = [["Monday"], ["Tuesday"], ["Friday"]]
+
+    dtv = DateTimeVectorizer(mode="ordinal", ignore_constant_columns=False,default_datetime=datetime(1900, 1, 1))
+    processed = dtv.fit_transform(cur_data_array)
+    year_location = dtv.extract_.index(DateTimeDefinition.YEAR.value)
+    month_location = dtv.extract_.index(DateTimeDefinition.MONTH.value)
+    weekday_location = dtv.extract_.index(DateTimeDefinition.WEEKDAY.value)
+
+    assert processed[0, year_location] == 1900
+    assert processed[0, month_location] == 0
+    assert processed[0, weekday_location] == 0
+
+    assert processed[1, year_location] == 1900
+    assert processed[1, month_location] == 0
+    assert processed[1, weekday_location] == 1
+
+    assert processed[2, year_location] == 1900
+    assert processed[2, month_location] == 0
+    assert processed[2, weekday_location] == 4
