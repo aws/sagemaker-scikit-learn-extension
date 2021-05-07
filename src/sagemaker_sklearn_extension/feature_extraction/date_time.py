@@ -92,7 +92,7 @@ class DateTimeDefinition(Enum):
 
 
 class DateTimeVectorizer(BaseEstimator, TransformerMixin):
-    def __init__(self, extract=None, mode="cyclic", ignore_constant_columns=True):
+    def __init__(self, extract=None, mode="cyclic", ignore_constant_columns=True, default_datetime=None):
         """Converts array-like data with datetime.datetime or strings describing datetime objects into numeric features
 
         A datetime item contains categorical information: year, month, hour, day of week, etc. This information is given
@@ -112,6 +112,11 @@ class DateTimeVectorizer(BaseEstimator, TransformerMixin):
                       is small for close items in the cyclic order (for example hour=23 is close to hour=0)
         ignore_constant_columns: bool, default True
             If True, fit will make sure the output columns are not constant in the training set.
+        default_datetime: DateTime, default None
+            Default DateTime object to use when information is missing from input array. This DateTime object is passed
+            as a keyword argument into the dateutil.parser.parse method. If this is a datetime object and not None,
+            elements specified in the parse method replace elements in the default object.
+            When ignore_constant_columns is True, the filled DateTime information will be removed if constant.
 
         Attributes
         ----------
@@ -149,6 +154,7 @@ class DateTimeVectorizer(BaseEstimator, TransformerMixin):
         self.extract = extract
         self.mode = mode
         self.ignore_constant_columns = ignore_constant_columns
+        self.default_datetime = default_datetime
 
     @staticmethod
     def _cyclic_transform(data, low, high):
@@ -215,19 +221,17 @@ class DateTimeVectorizer(BaseEstimator, TransformerMixin):
         DateTimeDefinition.WEEK_OF_YEAR.value,
     ]
 
-    @staticmethod
-    def _to_datetime_single(item):
+    def _to_datetime_single(self, item):
         if isinstance(item, datetime):
             return item
         try:
-            return parser.parse(item)
+            return parser.parse(item, default=self.default_datetime)
         except ValueError:
             pass
         except TypeError:
             pass
 
-    @staticmethod
-    def _to_datetime_array(X):
+    def _to_datetime_array(self, X):
         """Converts np array with string or datetime into datetime or None
 
         Parameters
@@ -241,7 +245,7 @@ class DateTimeVectorizer(BaseEstimator, TransformerMixin):
             np.array with datetime objects of the same shape of the input. Items that could not be parsed become None
 
         """
-        X = np.vectorize(DateTimeVectorizer._to_datetime_single)(X)
+        X = np.vectorize(DateTimeVectorizer._to_datetime_single)(self, X)
         return X
 
     def fit(self, X, y=None):
