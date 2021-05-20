@@ -25,7 +25,7 @@ def read_version():
 
 
 EXTRAS_REQUIRE = {
-    "test": ["tox", "tox-conda", "pytest", "coverage"],
+    "test": ["tox", "tox-conda==0.7.3", "pytest", "coverage"],
     "taei": ["torch==1.7.1"],
 }
 

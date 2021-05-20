@@ -8,7 +8,7 @@ phases:
       - apt-get install -y libtbb-dev
 
       # install tox
-      - pip install tox tox-conda
+      - pip install tox tox-conda==0.7.3
 
       # run linters, format verification, and package checks
       - start_time=`date +%s`
