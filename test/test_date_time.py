@@ -193,7 +193,7 @@ def test_fit_transform_accepts_mixed_str_datetime():
 def test_fit_transform_default_datetime():
     cur_data_array = [["Monday"], ["Tuesday"], ["Friday"]]
 
-    dtv = DateTimeVectorizer(mode="ordinal", ignore_constant_columns=False,default_datetime=datetime(1900, 1, 1))
+    dtv = DateTimeVectorizer(mode="ordinal", ignore_constant_columns=False, default_datetime=datetime(1900, 1, 1))
     processed = dtv.fit_transform(cur_data_array)
     year_location = dtv.extract_.index(DateTimeDefinition.YEAR.value)
     month_location = dtv.extract_.index(DateTimeDefinition.MONTH.value)
