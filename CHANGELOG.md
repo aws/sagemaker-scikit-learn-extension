@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.2.1 (2021-05-21)
+
+### Bug fixes and other changes
+
+ * Datetime fix
+
 ## v2.2.0 (2021-04-13)
 
 ### Features
