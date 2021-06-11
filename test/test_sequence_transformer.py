@@ -23,6 +23,7 @@ from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeat
 X_sequence = [["1, 2, 3, 44"], ["11, 12, 14, 111"], ["1, 1, 1, 2"]]
 X_flat = [[1, 2, 3, 44], [11, 12, 14, 111], [1, 1, 1, 2]]
 X_sequence_missing = [["1, NaN, 3, 44"], ["11, 12, NaN, 111"], ["NaN, NaN, 1, NaN"]]
+X_sequence_non_numeric = [["1, a, 3, 44"], ["11, 12, b, 111"], ["c, c, 1, c"]]
 X_flat_filled = [[1, np.nan, 3, 44], [11, 12, np.nan, 111], [np.nan, np.nan, 1, np.nan]]
 X_sequence_varying_length = [["1"], ["11, 111"], ["2, 3, 1, 4"]]
 X_flat_padded = [[1, np.nan, np.nan, np.nan], [11, 111, np.nan, np.nan], [2, 3, 1, 4]]
@@ -31,11 +32,15 @@ X_flat_padded_filled = [[1, np.nan, np.nan, np.nan], [np.nan, 111, np.nan, np.na
 X_sequence_gaps = [["1, , 3, 44"], ["11, 12, , 111"], [", , 1, "]]
 X_sequence_variable_gaps = [[" 1,    , 3,   44"], ["11,  12,  , 111"], [",, 1, "]]
 X_flat_gaps_filled = [[1, np.nan, 3, 44], [11, 12, np.nan, 111], [np.nan, np.nan, 1, np.nan]]
-X_sequence_inf = [["1, inf, 3, 44"], ["11, 12, inf, 111"], ["inf, inf, 1, inf"]]
+X_sequence_inf = [["1, inf, 3, 44"], ["11, 12, -inf, 111"], ["-inf, inf, 1, inf"]]
 X_flat_inf = [[1, np.nan, 3, 44], [11, 12, np.nan, 111], [np.nan, np.nan, 1, np.nan]]
 X_sequence_empty = [["1, 2, 3, 44"], [""], ["1, 1, 1, 2"]]
+X_sequence_none = [["1, 2, 3, 44"], [None], ["1, 1, 1, 2"]]
 X_flat_full = [[1, 2, 3, 44], [np.nan, np.nan, np.nan, np.nan], [1, 1, 1, 2]]
 X_multiple_sequences = [["1, 2, 3, 4", "1, 1, 3, 3"], ["11, 12, 14, 11", "10, 1, 1, 2"], ["10, 1, 1, 2", "1, 1, 1, 2"]]
+X_sequence_to_trim = [["1, 2, 3"], ["11, 12, 14, 111"], ["1, 1"]]
+X_flat_trimmed_start = [[2, 3], [14, 111], [1, 1]]
+X_flat_trimmed_end = [[1, 2], [11, 12], [1, 1]]
 
 # To test TSFreshFeatureExtractor with and without np.nans
 X_input = np.array([[1, 2, 3], [4, 5, 6], [10, 10, 10]])
@@ -49,6 +54,7 @@ X_padded_with_first_feature = np.array([[1.0, 0.0, 3.0, 44.0], [11.0, 12.0, 0.0,
 
 flattener_error_msg = "TSFlattener can process a single sequence column at a time, but it was given 2 sequence columns."
 tsfresh_error_msg = "The input dimension is 4 instead of the expected 3"
+MAX_LENGTH = 2  # maximum allowed sequence length in test_flattener_with_truncation
 
 
 @pytest.mark.parametrize(
@@ -56,16 +62,28 @@ tsfresh_error_msg = "The input dimension is 4 instead of the expected 3"
     [
         (X_sequence, X_flat),
         (X_sequence_missing, X_flat_filled),
+        (X_sequence_non_numeric, X_flat_filled),
         (X_sequence_varying_length, X_flat_padded),
         (X_sequence_varying_length_missing, X_flat_padded_filled),
         (X_sequence_gaps, X_flat_gaps_filled),
         (X_sequence_variable_gaps, X_flat_gaps_filled),
         (X_sequence_inf, X_flat_inf),
         (X_sequence_empty, X_flat_full),
+        (X_sequence_none, X_flat_full),
     ],
 )
 def test_flattener(X, X_expected):
     ts_flattener = TSFlattener()
+    X_observed = ts_flattener.transform(X)
+    assert_array_equal(X_observed, X_expected)
+
+
+@pytest.mark.parametrize(
+    "X, X_expected, trim_beginning",
+    [(X_sequence_to_trim, X_flat_trimmed_start, True), (X_sequence_to_trim, X_flat_trimmed_end, False),],
+)
+def test_flattener_with_truncation(X, X_expected, trim_beginning):
+    ts_flattener = TSFlattener(max_allowed_length=MAX_LENGTH, trim_beginning=trim_beginning)
     X_observed = ts_flattener.transform(X)
     assert_array_equal(X_observed, X_expected)
 
