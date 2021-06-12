@@ -26,12 +26,10 @@ class TSFlattener(BaseEstimator, TransformerMixin):
     """Convert lists of strings of varying length into an np.array.
 
     The input is a collection of lists of strings, with each string containing a sequence of comma-separate numbers.
-    TSFlattener extracts numerical values from these strings and pads shorter sequences (if any) with np.nans,
-    so that all sequences match the length of the longest sequence. TSFlattener returns a single np.array as output.
+    TSFlattener extracts numerical values from these strings and returns a list of np.arrays as output.
 
     Any missing values (represented either by a NaN, inf or empty string) are converted to np.nans.
-    Any entire sequence that cannot be parsed (represented by a None) is filled with np.nans to match the length
-    of the longest sequence.
+    Any entire sequence that cannot be parsed (represented by a None) is converted to a np.nan.
 
     Parameters
     ----------
@@ -54,9 +52,11 @@ class TSFlattener(BaseEstimator, TransformerMixin):
     >>> print(len(X))
     3
     >>> print(X)
-    [[  1.  nan   3.  44.]
-     [ 11. 111.  nan  nan]
-     [ nan  nan   1.  nan]]
+    [array([ 1., nan,  3., 44.]), array([ 11., 111.]), array([nan, nan,  1., nan])]
+    >>> ts_flattener = TSFlattener(max_allowed_length=2, trim_beginning=True)
+    >>> X = ts_flattener.transform(data)
+    >>> print(X)
+    [array([ 3., 44.]), array([ 11., 111.]), array([ 1., nan])]
     """
 
     def __init__(self, max_allowed_length=10000, trim_beginning=True):
@@ -72,8 +72,7 @@ class TSFlattener(BaseEstimator, TransformerMixin):
     def transform(self, X, y=None):
         """Extract numerical values from strings of comma-separated numbers and returns an np.array.
 
-        - If some sequences are shorter than the longest sequence, these are padded with np.nans.
-        - Anything that can't be turned into a finite float is converted to a np.nan.
+        Anything that can't be turned into a finite float is converted to a np.nan.
 
         Parameters
         ----------
@@ -81,18 +80,15 @@ class TSFlattener(BaseEstimator, TransformerMixin):
 
         Returns
         -------
-        X : np.array
+        X : List of np.arrays
 
         """
         X = check_array(X, dtype=None, force_all_finite="allow-nan")
         # Parse the input strings
         numeric_sequences = self._convert_to_numeric(X)
-        # Pad shorter sequences with np.nans to reach the length of the longest sequence
-        X = self._pad_sequences(numeric_sequences)
-        return X
+        return numeric_sequences
 
-    @staticmethod
-    def _convert_to_numeric(X):
+    def _convert_to_numeric(self, X):
         numeric_sequences = []
         for string_sequence in X:
             assert len(string_sequence) == 1, (
@@ -112,41 +108,39 @@ class TSFlattener(BaseEstimator, TransformerMixin):
                     numeric_sequence.append(s)
             else:
                 numeric_sequence.append(np.nan)
+            numeric_sequence = self._truncate_sequence(numeric_sequence)
             numeric_sequences.append(numeric_sequence)
+        # Convert to list of np.arrays
+        numeric_sequences = [np.array(sequence) for sequence in numeric_sequences]
         return numeric_sequences
 
-    def _pad_sequences(self, numeric_sequences):
-        max_observed_length = np.max([len(numeric_sequence) for numeric_sequence in numeric_sequences])
-        max_length = min(max_observed_length, self.max_allowed_length)
-        num_observations = len(numeric_sequences)
-        X = np.empty((num_observations, max_length))
-        X.fill(np.nan)
-        for id_sequence, sequence in enumerate(numeric_sequences):
-            if len(sequence) > max_length:
-                # If a sequence exceeds the maximum length allowed, truncate it
-                if self.trim_beginning:
-                    sequence = sequence[-max_length:]
-                else:
-                    sequence = sequence[:max_length]
-            X[id_sequence, : len(sequence)] = sequence
-        return X
+    def _truncate_sequence(self, numeric_sequence):
+        if self.trim_beginning:
+            numeric_sequence = numeric_sequence[-self.max_allowed_length :]
+        else:
+            numeric_sequence = numeric_sequence[: self.max_allowed_length]
+        return numeric_sequence
 
     def _more_tags(self):
         return {"X_types": ["string"], "allow_nan": True}
 
 
 class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
-    """Extract features computed by tsfresh from each row of an array and append them to the input
+    """Extract 787 features computed by tsfresh from each input array or list and append them to the input
     array (if augment = True) or return the extracted features alone (if augment = False).
 
     Examples of these features are the mean, median, kurtosis, and autocorrelation of each sequence. The full list
     of extracted features can be found at https://tsfresh.readthedocs.io/en/latest/text/list_of_features.html.
 
+    Any np.nans in the input arrays/lists are dropped before extracting the tsfresh features.
+
     Parameters
     ----------
     augment : boolean (default=True):
-        Whether to append the tsfresh features to the original raw data (if True),
-        or output only the extracted tsfresh features (if False)
+        Whether to append the tsfresh features to the original data (if True),
+        or output only the extracted tsfresh features (if False).
+        If True, also pad shorter sequences (if any) in the original data with np.nans, so that all sequences
+        match the length of the longest sequence, and interpolate them as indicated by ``interpolation_method``.
 
     interpolation_method : {'linear', 'fill', 'zeroes', None} (default='zeroes')
         'linear': linear interpolation
@@ -165,11 +159,11 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     --------
     >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
     >>> import numpy as np
-    >>> data = np.array([[1, 2, np.nan], [4, 5, 6], [10, 10, 10]])
+    >>> data = [np.array([ 1., np.nan,  3., 44.]), np.array([ 11., 111.]), np.array([np.nan, np.nan,  1., np.nan])]
     >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True)
     >>> X = tsfresh_feature_extractor.fit_transform(data)
     >>> print(X.shape)
-    (3, 790)
+    (3, 791)
     >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=False)
     >>> X = tsfresh_feature_extractor.fit_transform(data)
     >>> print(X.shape)
@@ -182,8 +176,6 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         self.interpolation_method = interpolation_method
 
     def fit(self, X, y=None):
-        X = check_array(X, force_all_finite="allow-nan")
-        self._dim = X.shape[1]
         tsfresh_features, _ = self._extract_tsfresh_features(X)
         robust_standard_scaler = RobustStandardScaler()
         robust_standard_scaler.fit(tsfresh_features)
@@ -191,27 +183,26 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X, y=None):
-        """Extract features computed by tsfresh from each row of the input array after imputing missing values.
+        """Extract features computed by tsfresh from each input array/list.
 
         Parameters
         ----------
-        X : np.array
+        X : list of np.arrays or list of lists
 
         Returns
         -------
         tsfresh_features : np.array
 
         """
-        X = check_array(X, force_all_finite="allow-nan")
         check_is_fitted(self, "robust_standard_scaler_")
-        if X.shape[1] != self._dim:
-            raise ValueError(f"The input dimension is {X.shape[1]} instead of the expected {self._dim}")
         tsfresh_features, X_df = self._extract_tsfresh_features(X)
         tsfresh_features = self.robust_standard_scaler_.transform(tsfresh_features)
         if self.augment:
-            # Append the extracted features to the original dataset X, after converting X
-            # from a DataFrame back to a np.array (with missing values imputed)
-            X = X_df.groupby("id").agg(lambda x: x.tolist())[0].to_numpy()
+            # Stack the extracted features to the original sequences in X, after padding with np.nans any shorter
+            # input sequences in X to match the length of the longest sequence, and imputing missing values as
+            # specified by interpolation_method
+            X_df_padded = self._interpolate(X_df)
+            X = X_df_padded.groupby("id").agg(lambda x: x.tolist())[0].to_numpy()
             X = np.stack(X, axis=0)
             tsfresh_features = np.hstack((X, tsfresh_features))
         return tsfresh_features
@@ -237,9 +228,9 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
 
     @staticmethod
     def _convert_to_df(X):
-        """Convert the np.array X into a dataframe compatible with extract_features."""
-        X_df = pd.DataFrame(data=X.astype("float64"))
-        X_df = X_df.stack(dropna=False)  # dropna=True would drop value for all sequences if at least one has a np.nan
+        """Convert the list of np.arrays X into a dataframe compatible with extract_features."""
+        X_df = pd.DataFrame(data=X)
+        X_df = X_df.stack(dropna=False)
         X_df.index.rename(["id", "time"], inplace=True)
         X_df = X_df.reset_index()
         return X_df
@@ -252,14 +243,18 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
 
     def _extract_tsfresh_features(self, X):
         X_df = self._convert_to_df(X)
-        X_df = self._interpolate(X_df)
+        X_df_no_nans = X_df.dropna()
         # Extract time series features from the dataframe
         # Replace any ``NaNs`` and ``infs`` in the extracted features with average/extreme values for that column
         extraction_settings = ComprehensiveFCParameters()
         tsfresh_features = extract_features(
-            X_df, default_fc_parameters=extraction_settings, column_id="id", column_sort="time", impute_function=impute
+            X_df_no_nans,
+            default_fc_parameters=extraction_settings,
+            column_id="id",
+            column_sort="time",
+            impute_function=impute,
         )
         return tsfresh_features, X_df
 
     def _more_tags(self):
-        return {"allow_nan": True}
+        return {"_skip_test": True, "allow_nan": True}
