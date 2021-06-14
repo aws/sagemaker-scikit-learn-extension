@@ -50,10 +50,11 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         If True, also pad shorter sequences (if any) in the original data with np.nans, so that all sequences
         match the length of the longest sequence, and interpolate them as indicated by ``interpolation_method``.
 
-    interpolation_method : {'linear', 'fill', 'zeroes', None} (default='zeroes')
+    interpolation_method : {'linear', 'fill', 'zeroes', 'hybrid', None} (default='hybrid')
         'linear': linear interpolation
         'fill': forward fill to complete the sequences; then, backfill in case of NaNs at the start of the sequence.
         'zeroes': pad with zeroes
+        'hybrid': replace with zeroes any NaNs at the end or start of the sequences, and forward fill NaNs in between
          None: no interpolation
 
     Examples
@@ -71,7 +72,7 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
     (3, 1574)
     """
 
-    def __init__(self, max_allowed_length=10000, trim_beginning=True, augment=True, interpolation_method="zeroes"):
+    def __init__(self, max_allowed_length=10000, trim_beginning=True, augment=True, interpolation_method="hybrid"):
         super().__init__()
         assert max_allowed_length > 0, f"{max_allowed_length} must be positive."
         self.max_allowed_length = max_allowed_length
@@ -240,10 +241,11 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         If True, also pad shorter sequences (if any) in the original data with np.nans, so that all sequences
         match the length of the longest sequence, and interpolate them as indicated by ``interpolation_method``.
 
-    interpolation_method : {'linear', 'fill', 'zeroes', None} (default='zeroes')
+    interpolation_method : {'linear', 'fill', 'zeroes', 'hybrid', None} (default='hybrid')
         'linear': linear interpolation
         'fill': forward fill to complete the sequences; then, backfill in case of NaNs at the start of the sequence.
         'zeroes': pad with zeroes
+        'hybrid': replace with zeroes any NaNs at the end or start of the sequences, and forward fill NaNs in between
          None: no interpolation
 
     Attributes
@@ -257,18 +259,22 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     --------
     >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
     >>> import numpy as np
-    >>> data = [np.array([ 1., np.nan,  3., 44.]), np.array([ 11., 111.]), np.array([np.nan, np.nan,  1., np.nan])]
-    >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True)
+    >>> data = [np.array([ 3., np.nan,  4.]), np.array([ 5, 6]), np.array([8, np.nan,  np.nan, 10])]
+    >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True, interpolation_method="hybrid")
     >>> X = tsfresh_feature_extractor.fit_transform(data)
     >>> print(X.shape)
     (3, 791)
+    >>> print(X[:4, :4])
+    [[ 3.  3.  4.  0.]
+     [ 5.  6.  0.  0.]
+     [ 8.  8.  8. 10.]]
     >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=False)
     >>> X = tsfresh_feature_extractor.fit_transform(data)
     >>> print(X.shape)
     (3, 787)
     """
 
-    def __init__(self, augment=True, interpolation_method="zeroes"):
+    def __init__(self, augment=True, interpolation_method="hybrid"):
         super().__init__()
         self.augment = augment
         self.interpolation_method = interpolation_method
@@ -305,8 +311,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             tsfresh_features = np.hstack((X, tsfresh_features))
         return tsfresh_features
 
-    @staticmethod
-    def _impute_ts(X, interpolation_method):
+    def _impute_ts(self, X, interpolation_method):
         """Impute time series missing values by linear interpolation,
         forward/backward filling, or padding with zeroes.
         """
@@ -317,10 +322,12 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             X[0] = X[0].interpolate(method="ffill", axis=0).interpolate(method="bfill", axis=0)
         elif interpolation_method == "zeroes":
             X[0] = X[0].fillna(0)
+        elif interpolation_method == "hybrid":
+            X = X.groupby("id").apply(self._hybrid_interpolation)
         else:
             raise ValueError(
                 f"{interpolation_method} is not a supported interpolation method. Please choose one from "
-                f"the following options: [linear, fill, zeroes]."
+                f"the following options: [linear, fill, zeroes, hybrid]."
             )
         return X
 
@@ -339,11 +346,22 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             X_df = self._impute_ts(X_df, self.interpolation_method)
         return X_df
 
+    @staticmethod
+    def _hybrid_interpolation(x):
+        """Replace with zeroes any NaNs at the end or start of the sequences and forward fill the remaining NaNs."""
+        # Compute the index of the first and last non-NaN value
+        # In case of all NaNs, both first_valid and last_valid are None, and all values get replaced with zeroes
+        first_valid = x[0].first_valid_index()
+        last_valid = x[0].last_valid_index()
+        x.loc[first_valid:last_valid, 0] = x.loc[first_valid:last_valid, 0].interpolate(method="ffill", axis=0)
+        x[0] = x[0].fillna(0)
+        return x
+
     def _extract_tsfresh_features(self, X):
         X_df = self._convert_to_df(X)
         X_df_no_nans = X_df.dropna()
         # Extract time series features from the dataframe
-        # Replace any ``NaNs`` and ``infs`` in the extracted features with average/extreme values for that column
+        # Replace any ``NaNs`` and ``infs`` in the extracted features with median/extreme values for that column
         extraction_settings = ComprehensiveFCParameters()
         tsfresh_features = extract_features(
             X_df_no_nans,
@@ -352,7 +370,10 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             column_sort="time",
             impute_function=impute,
         )
-        return tsfresh_features, X_df
+        # If X_df.dropna() dropped some observations entirely (i.e., due to all NaNs),
+        # impute each tsfresh feature for those observations with the median of that tsfresh feature
+        tsfresh_features_imputed = impute(tsfresh_features.reindex(pd.RangeIndex(X_df["id"].max() + 1)))
+        return tsfresh_features_imputed, X_df
 
     def _more_tags(self):
         return {"_skip_test": True, "allow_nan": True}

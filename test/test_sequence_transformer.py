@@ -55,10 +55,14 @@ X_impute = np.array([[np.nan, 2, np.nan], [4, np.nan, 6], [10, np.nan, 10]])
 X_padded = np.array([[0, 2, 0], [4, 0, 6], [10, 0, 10]])
 X_filled = np.array([[2, 2, 2], [4, 4, 6], [10, 10, 10]])
 X_interpolated = np.array([[2, 2, 3], [4, 5, 6], [10, 10, 10]])
+X_hybrid = np.array([[0, 2, 0], [4, 4, 6], [10, 10, 10]])
+# to test the case of observations with only np.nans
+X_all_nan = [[np.nan, np.nan, np.nan, np.nan], [np.nan], [10, 10, 10, 10], [10, 20, 30, 40]]
+X_all_nan_imputed = [[0, 0, 0, 0], [0, 0, 0, 0], [10, 10, 10, 10], [10, 20, 30, 40]]
 # to test that the first tsfresh feature is computed correctly
 X_with_first_feature = np.array([[1, 2, 3, 44, 0.707107], [11, 12, 14, 111, 0.707107], [1, 1, 1, 2, -1.414214]])
 X_filled_with_first_feature = np.array(
-    [[1.0, 0.0, 3.0, 44.0, 0.70710678], [11.0, 12.0, 0.0, 111.0, 0.70710678], [0.0, 0.0, 1.0, 0.0, -1.41421356]]
+    [[1.0, 1.0, 3.0, 44.0, 0.70710678], [11.0, 12.0, 12.0, 111.0, 0.70710678], [0.0, 0.0, 1.0, 0.0, -1.41421356]]
 )
 X_padded_with_first_feature = np.array(
     [[1.0, 2.0, 0.0, 0.0, -1.41421356], [11.0, 111.0, 0.0, 0.0, 0.70710678], [2.0, 3.0, 1.0, 4.0, 0.70710678]]
@@ -130,6 +134,7 @@ def test_tsfresh_feature_dimension(X, num_expected_features, augment):
         (X_impute, X_padded, "zeroes"),
         (X_impute, X_filled, "fill"),
         (X_impute, X_interpolated, "linear"),
+        (X_impute, X_hybrid, "hybrid"),
     ],
 )
 def test_tsfresh_interpolations(X, X_expected, interpolation_method):
@@ -139,6 +144,22 @@ def test_tsfresh_interpolations(X, X_expected, interpolation_method):
     max_dim = np.max([len(x) for x in X])
     X_observed = X_with_features[:, :max_dim]
     assert_array_almost_equal(X_observed, X_expected)
+
+
+def test_tsfresh_all_nan():
+    X = X_all_nan
+    X_expected = X_all_nan_imputed
+    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True)
+    X_with_features = tsfresh_feature_extractor.fit_transform(X)
+    max_dim = np.max([len(x) for x in X])
+    X_observed = X_with_features[:, :max_dim]
+    computed_tsfresh_features = X_with_features[2:, max_dim:]
+    imputed_tsfresh_features_observed = X_with_features[:2, max_dim:]
+    tsfresh_features_median = np.median(computed_tsfresh_features, axis=0)
+    imputed_tsfresh_features_expected = np.repeat(tsfresh_features_median.reshape((1, -1)), 2, axis=0)
+    assert_array_almost_equal(X_observed, X_expected)
+    assert X_with_features.shape == (4, 791)
+    assert_array_almost_equal(imputed_tsfresh_features_observed, imputed_tsfresh_features_expected)
 
 
 def test_tsfresh_transform_variable_input_dim():
