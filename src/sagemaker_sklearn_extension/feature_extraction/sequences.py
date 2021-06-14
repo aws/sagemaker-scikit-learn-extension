@@ -22,6 +22,104 @@ from tsfresh.utilities.dataframe_functions import impute
 from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
 
 
+class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
+    """Wrap TSFlattener and TSFreshFeatureExtractor to extract time series features from multiple sequence columns.
+
+    The input is an array where rows are observations and columns are sequence features. Each sequence feature is a
+    string containing a sequence of comma-separate numbers.
+
+    For each column, TSFlattener extracts numerical values from the strings and returns a list of np.arrays as output,
+    and then TSFreshFeatureExtractor extracts time series features from each list. The outputs from each column are then
+    stacked horizontally into a single array.
+
+    See TSFlattener and TSFreshFeatureExtractor for more details.
+
+    Parameters
+    ----------
+    max_allowed_length : int (default = 10000)
+        Maximum allowed length of an input sequence. If the length of a sequence is greater than ``max_allowed_length``,
+        the transformer will truncate its beginning or end as indicated by ``trim_beginning``.
+
+    trim_beginning : bool (default = True)
+        If a sequence length exceeds ``max_allowed_length``, trim its start and only keep the last `max_allowed_length``
+        values if ``trim_beginning`` = True, otherwise trim the end and only keep the first max_allowed_length values.
+
+    augment : boolean (default=True):
+        Whether to append the tsfresh features to the original data (if True),
+        or output only the extracted tsfresh features (if False).
+        If True, also pad shorter sequences (if any) in the original data with np.nans, so that all sequences
+        match the length of the longest sequence, and interpolate them as indicated by ``interpolation_method``.
+
+    interpolation_method : {'linear', 'fill', 'zeroes', None} (default='zeroes')
+        'linear': linear interpolation
+        'fill': forward fill to complete the sequences; then, backfill in case of NaNs at the start of the sequence.
+        'zeroes': pad with zeroes
+         None: no interpolation
+
+    Examples
+    --------
+    >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TimeSeriesFeatureExtractor
+    >>> import numpy as np
+    >>> data = [["1,, 3, 44", "3, 4, 5, 6"], ["11, 111", "1, 1, 2, 2"], ["NaN, , 1, NaN", "2, 1, 3, 2"]]
+    >>> ts_pipeline = TimeSeriesFeatureExtractor(augment=True)
+    >>> X = ts_pipeline.fit_transform(data)
+    >>> print(X.shape)
+    (3, 1582)
+    >>> ts_pipeline = TimeSeriesFeatureExtractor(augment=False)
+    >>> X = ts_pipeline.fit_transform(data)
+    >>> print(X.shape)
+    (3, 1574)
+    """
+
+    def __init__(self, max_allowed_length=10000, trim_beginning=True, augment=True, interpolation_method="zeroes"):
+        super().__init__()
+        assert max_allowed_length > 0, f"{max_allowed_length} must be positive."
+        self.max_allowed_length = max_allowed_length
+        self.trim_beginning = trim_beginning
+        self.augment = augment
+        self.interpolation_method = interpolation_method
+
+    def fit(self, X, y=None):
+        X = check_array(X, dtype=None, force_all_finite="allow-nan")
+        ts_flattener = TSFlattener(max_allowed_length=self.max_allowed_length, trim_beginning=self.trim_beginning)
+        tsfresh_feature_extractors = []
+        for sequence_column in X.T:
+            numeric_sequences = ts_flattener.transform(sequence_column.reshape(-1, 1))
+            tsfresh_feature_extractor = TSFreshFeatureExtractor(
+                augment=self.augment, interpolation_method=self.interpolation_method
+            )
+            tsfresh_feature_extractor.fit(numeric_sequences)
+            tsfresh_feature_extractors.append(tsfresh_feature_extractor)
+        self.tsfresh_feature_extractors_ = tsfresh_feature_extractors
+        return self
+
+    def transform(self, X, y=None):
+        """Apply TSFlattener followed by TSFreshFeatureExtractor to each sequence column in X.
+
+        Parameters
+        ----------
+        X : np.array (each column is a list of strings)
+
+        Returns
+        -------
+        X : np.array (all values are numerical)
+
+        """
+        X = check_array(X, dtype=None, force_all_finite="allow-nan")
+        check_is_fitted(self, "tsfresh_feature_extractors_")
+        ts_flattener = TSFlattener(max_allowed_length=self.max_allowed_length, trim_beginning=self.trim_beginning)
+        sequences_with_features = []
+        for id_column, sequence_column in enumerate(X.T):
+            numeric_sequences = ts_flattener.transform(sequence_column.reshape(-1, 1))
+            X_with_features = self.tsfresh_feature_extractors_[id_column].transform(numeric_sequences)
+            sequences_with_features.append(X_with_features)
+        X = np.hstack(sequences_with_features)
+        return X
+
+    def _more_tags(self):
+        return {"X_types": ["string"], "allow_nan": True}
+
+
 class TSFlattener(BaseEstimator, TransformerMixin):
     """Convert lists of strings of varying length into an np.array.
 

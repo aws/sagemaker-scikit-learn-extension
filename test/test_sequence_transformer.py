@@ -16,6 +16,7 @@ import pytest
 
 from sklearn.utils.testing import assert_array_almost_equal
 
+from sagemaker_sklearn_extension.feature_extraction.sequences import TimeSeriesFeatureExtractor
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFlattener
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
 
@@ -31,7 +32,7 @@ X_sequence_variable_gaps = [[" 1,    , 3,   44"], ["11,  12,  , 111"], [",, 1, "
 X_flat_gaps_filled = [[1, np.nan, 3, 44], [11, 12, np.nan, 111], [np.nan, np.nan, 1, np.nan]]
 X_sequence_inf = [["1, inf, 3, 44"], ["11, 12, -inf, 111"], ["-inf, inf, 1, inf"]]
 X_flat_inf = [[1, np.nan, 3, 44], [11, 12, np.nan, 111], [np.nan, np.nan, 1, np.nan]]
-X_multiple_sequences = [["1, 2, 3, 4", "1, 1, 3, 3"], ["11, 12, 14, 11", "10, 1, 1, 2"], ["10, 1, 1, 2", "1, 1, 1, 2"]]
+X_multiple_sequences = [["1, NaN, 3, 44", "1, 1, , 3"], ["11, 12, NaN, 111", "10, 1, 1"], ["NaN, NaN, 1", "1, 1, 1, 2"]]
 # with variable-length inputs
 X_sequence_varying_length = [["1, 2"], ["11, 111"], ["2, 3, 1, 4"]]
 X_flat_varying_length = [[1, 2], [11, 111], [2, 3, 1, 4]]
@@ -166,6 +167,29 @@ def test_full_time_series_pipeline(X, X_expected):
     # Compute tsfresh features
     tsfresh_feature_extractor = TSFreshFeatureExtractor()
     tsfresh_feature_extractor.fit(X_flattened)
-    X_with_features = tsfresh_feature_extractor.transform(X_flattened)
-    X_observed = X_with_features[:5, :5]
+    X_with_features_combined_transformers = tsfresh_feature_extractor.transform(X_flattened)
+    X_observed_combined_transformers = X_with_features_combined_transformers[:5, :5]
+    # Repeat the above in a single step with the TimeSeriesFeatureExtractor wrapper
+    time_series_feature_extractor = TimeSeriesFeatureExtractor()
+    X_with_features_time_series_transformer = time_series_feature_extractor.fit_transform(X)
+    X_observed_time_series_transformer = X_with_features_time_series_transformer[:5, :5]
+    # Compare the two outputs with each other and with the expected result
+    assert_array_almost_equal(X_observed_combined_transformers, X_expected)
+    assert_array_almost_equal(X_observed_time_series_transformer, X_expected)
+    assert_array_almost_equal(X_with_features_combined_transformers, X_with_features_time_series_transformer)
+
+
+@pytest.mark.parametrize(
+    "X, X_expected",
+    [(X_multiple_sequences, X_filled_with_first_feature), (X_sequence_missing, X_filled_with_first_feature),],
+)
+def test_time_series_feature_extractor_multiple_columns(X, X_expected):
+    time_series_feature_extractor = TimeSeriesFeatureExtractor(augment=True)
+    X_with_features_time_series_transformer = time_series_feature_extractor.fit_transform(X)
+    num_sequence_columns = np.array(X).shape[1]
+    # The output is expected to have 787 features (extracted from tsfresh) for each sequence column in the input,
+    # plus the 4 raw features from each original sequence column (since augment = True)
+    num_expected_features = (787 + 4) * num_sequence_columns
+    assert X_with_features_time_series_transformer.shape == (3, num_expected_features)
+    X_observed = X_with_features_time_series_transformer[:5, :5]
     assert_array_almost_equal(X_observed, X_expected)
