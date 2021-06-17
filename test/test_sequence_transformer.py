@@ -117,10 +117,18 @@ def test_flattener_transform_input_error():
 
 
 @pytest.mark.parametrize(
-    "X, num_expected_features, augment", [(X_input, 791, True), (X_input, 787, False)],
+    "X, num_expected_features, augment, extraction_type",
+    [
+        (X_input, 791, True, "all"),
+        (X_input, 787, False, "all"),
+        (X_input, 785, True, "efficient"),
+        (X_input, 781, False, "efficient"),
+        (X_input, 13, True, "minimal"),
+        (X_input, 9, False, "minimal"),
+    ],
 )
-def test_tsfresh_feature_dimension(X, num_expected_features, augment):
-    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=augment)
+def test_tsfresh_feature_dimension(X, num_expected_features, augment, extraction_type):
+    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=augment, extraction_type=extraction_type)
     tsfresh_feature_extractor.fit(X_input)
     X_with_features = tsfresh_feature_extractor.transform(X)
     num_tsfresh_features = X_with_features.shape[1]
@@ -149,7 +157,7 @@ def test_tsfresh_interpolations(X, X_expected, interpolation_method):
 def test_tsfresh_all_nan():
     X = X_all_nan
     X_expected = X_all_nan_imputed
-    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True)
+    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True, extraction_type="all")
     X_with_features = tsfresh_feature_extractor.fit_transform(X)
     max_dim = np.max([len(x) for x in X])
     X_observed = X_with_features[:, :max_dim]
@@ -163,7 +171,7 @@ def test_tsfresh_all_nan():
 
 
 def test_tsfresh_transform_variable_input_dim():
-    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=False)
+    tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=False, extraction_type="all")
     tsfresh_feature_extractor.fit(X_impute)
     tsfresh_features_first_set = tsfresh_feature_extractor.transform(X_impute.tolist())
     tsfresh_features_second_set = tsfresh_feature_extractor.transform(np.ones((5, 6)).tolist())
@@ -186,12 +194,12 @@ def test_full_time_series_pipeline(X, X_expected):
     ts_flattener = TSFlattener()
     X_flattened = ts_flattener.transform(X)
     # Compute tsfresh features
-    tsfresh_feature_extractor = TSFreshFeatureExtractor()
+    tsfresh_feature_extractor = TSFreshFeatureExtractor(extraction_type="all")
     tsfresh_feature_extractor.fit(X_flattened)
     X_with_features_combined_transformers = tsfresh_feature_extractor.transform(X_flattened)
     X_observed_combined_transformers = X_with_features_combined_transformers[:5, :5]
     # Repeat the above in a single step with the TimeSeriesFeatureExtractor wrapper
-    time_series_feature_extractor = TimeSeriesFeatureExtractor()
+    time_series_feature_extractor = TimeSeriesFeatureExtractor(extraction_type="all")
     X_with_features_time_series_transformer = time_series_feature_extractor.fit_transform(X)
     X_observed_time_series_transformer = X_with_features_time_series_transformer[:5, :5]
     # Compare the two outputs with each other and with the expected result
@@ -205,7 +213,7 @@ def test_full_time_series_pipeline(X, X_expected):
     [(X_multiple_sequences, X_filled_with_first_feature), (X_sequence_missing, X_filled_with_first_feature),],
 )
 def test_time_series_feature_extractor_multiple_columns(X, X_expected):
-    time_series_feature_extractor = TimeSeriesFeatureExtractor(augment=True)
+    time_series_feature_extractor = TimeSeriesFeatureExtractor(augment=True, extraction_type="all")
     X_with_features_time_series_transformer = time_series_feature_extractor.fit_transform(X)
     num_sequence_columns = np.array(X).shape[1]
     # The output is expected to have 787 features (extracted from tsfresh) for each sequence column in the input,

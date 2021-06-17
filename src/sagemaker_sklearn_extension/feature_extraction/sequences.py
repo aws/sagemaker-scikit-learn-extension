@@ -17,6 +17,8 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_array, check_is_fitted
 from tsfresh import extract_features
 from tsfresh.feature_extraction import ComprehensiveFCParameters
+from tsfresh.feature_extraction import EfficientFCParameters
+from tsfresh.feature_extraction import MinimalFCParameters
 from tsfresh.utilities.dataframe_functions import impute
 
 from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
@@ -57,6 +59,12 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         'hybrid': replace with zeroes any NaNs at the end or start of the sequences, and forward fill NaNs in between
          None: no interpolation
 
+    extraction_type : {'minimal', 'efficient', 'all'} (default='efficient')
+        Control the number of features extracted from tsfresh.
+        'minimal': most of the feature extractors are disabled and only a small subset is used
+        'efficient': extract 781 tsfresh features, namely all of them except for the expensive to compute ones
+        'all': extract all 787 tsfresh features
+
     Examples
     --------
     >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TimeSeriesFeatureExtractor
@@ -65,20 +73,28 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
     >>> ts_pipeline = TimeSeriesFeatureExtractor(augment=True)
     >>> X = ts_pipeline.fit_transform(data)
     >>> print(X.shape)
-    (3, 1582)
+    (3, 1570)
     >>> ts_pipeline = TimeSeriesFeatureExtractor(augment=False)
     >>> X = ts_pipeline.fit_transform(data)
     >>> print(X.shape)
-    (3, 1574)
+    (3, 1562)
     """
 
-    def __init__(self, max_allowed_length=10000, trim_beginning=True, augment=True, interpolation_method="hybrid"):
+    def __init__(
+        self,
+        max_allowed_length=10000,
+        trim_beginning=True,
+        augment=True,
+        interpolation_method="hybrid",
+        extraction_type="efficient",
+    ):
         super().__init__()
         assert max_allowed_length > 0, f"{max_allowed_length} must be positive."
         self.max_allowed_length = max_allowed_length
         self.trim_beginning = trim_beginning
         self.augment = augment
         self.interpolation_method = interpolation_method
+        self.extraction_type = extraction_type
 
     def fit(self, X, y=None):
         X = check_array(X, dtype=None, force_all_finite="allow-nan")
@@ -87,7 +103,9 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         for sequence_column in X.T:
             numeric_sequences = ts_flattener.transform(sequence_column.reshape(-1, 1))
             tsfresh_feature_extractor = TSFreshFeatureExtractor(
-                augment=self.augment, interpolation_method=self.interpolation_method
+                augment=self.augment,
+                interpolation_method=self.interpolation_method,
+                extraction_type=self.extraction_type,
             )
             tsfresh_feature_extractor.fit(numeric_sequences)
             tsfresh_feature_extractors.append(tsfresh_feature_extractor)
@@ -225,7 +243,7 @@ class TSFlattener(BaseEstimator, TransformerMixin):
 
 
 class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
-    """Extract 787 features computed by tsfresh from each input array or list and append them to the input
+    """Extract features computed by tsfresh from each input array or list and append them to the input
     array (if augment = True) or return the extracted features alone (if augment = False).
 
     Examples of these features are the mean, median, kurtosis, and autocorrelation of each sequence. The full list
@@ -248,6 +266,12 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         'hybrid': replace with zeroes any NaNs at the end or start of the sequences, and forward fill NaNs in between
          None: no interpolation
 
+    extraction_type : {'minimal', 'efficient', 'all'} (default='efficient')
+        Control the number of features extracted from tsfresh.
+        'minimal': most of the feature extractors are disabled and only a small subset is used
+        'efficient': extract 781 tsfresh features, namely all of them except for the expensive to compute ones
+        'all': extract all 787 tsfresh features
+
     Attributes
     ----------
     self.robust_standard_scaler_ : ``sagemaker_sklearn_extension.preprocessing.data.RobustStandardScaler``
@@ -263,7 +287,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=True, interpolation_method="hybrid")
     >>> X = tsfresh_feature_extractor.fit_transform(data)
     >>> print(X.shape)
-    (3, 791)
+    (3, 785)
     >>> print(X[:4, :4])
     [[ 3.  3.  4.  0.]
      [ 5.  6.  0.  0.]
@@ -271,13 +295,14 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     >>> tsfresh_feature_extractor = TSFreshFeatureExtractor(augment=False)
     >>> X = tsfresh_feature_extractor.fit_transform(data)
     >>> print(X.shape)
-    (3, 787)
+    (3, 781)
     """
 
-    def __init__(self, augment=True, interpolation_method="hybrid"):
+    def __init__(self, augment=True, interpolation_method="hybrid", extraction_type="efficient"):
         super().__init__()
         self.augment = augment
         self.interpolation_method = interpolation_method
+        self.extraction_type = extraction_type
 
     def fit(self, X, y=None):
         tsfresh_features, _ = self._extract_tsfresh_features(X)
@@ -360,12 +385,22 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     def _extract_tsfresh_features(self, X):
         X_df = self._convert_to_df(X)
         X_df_no_nans = X_df.dropna()
+        if self.extraction_type == "minimal":
+            extraction_setting = MinimalFCParameters()
+        elif self.extraction_type == "efficient":
+            extraction_setting = EfficientFCParameters()
+        elif self.extraction_type == "all":
+            extraction_setting = ComprehensiveFCParameters()
+        else:
+            raise ValueError(
+                f"{self.extraction_type} is not a supported feature extraction option. Please choose one from "
+                f"the following options: [minimal, efficient, all]."
+            )
         # Extract time series features from the dataframe
         # Replace any ``NaNs`` and ``infs`` in the extracted features with median/extreme values for that column
-        extraction_settings = ComprehensiveFCParameters()
         tsfresh_features = extract_features(
             X_df_no_nans,
-            default_fc_parameters=extraction_settings,
+            default_fc_parameters=extraction_setting,
             column_id="id",
             column_sort="time",
             impute_function=impute,
