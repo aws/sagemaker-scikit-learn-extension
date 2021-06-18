@@ -20,7 +20,7 @@ from sklearn.utils.estimator_checks import check_estimator
 
 from sagemaker_sklearn_extension.feature_extraction.text import MultiColumnTfidfVectorizer
 from sagemaker_sklearn_extension.feature_extraction.date_time import DateTimeVectorizer
-from sagemaker_sklearn_extension.feature_extraction.sequences import TimeSeriesFeatureExtractor
+from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFlattener
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
 from sagemaker_sklearn_extension.impute import RobustImputer
@@ -52,7 +52,7 @@ from sagemaker_sklearn_extension.preprocessing import WOEEncoder
         RobustStandardScaler(),
         ThresholdOneHotEncoder(),
         WOEEncoder(),
-        TimeSeriesFeatureExtractor(),
+        TSFeatureExtractor(),
         TSFlattener(),
         TSFreshFeatureExtractor(),
     ],

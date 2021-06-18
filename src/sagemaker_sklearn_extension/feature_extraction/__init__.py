@@ -18,8 +18,8 @@ to extract features from text. This module is based on the
 :mod:`sklearn.feature_extraction` module.
 """
 
-from sagemaker_sklearn_extension.feature_extraction import date_time
-from sagemaker_sklearn_extension.feature_extraction import sequences
-from sagemaker_sklearn_extension.feature_extraction import text
+from . import date_time
+from . import sequences
+from . import text
 
 __all__ = ["date_time", "sequences", "text"]

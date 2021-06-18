@@ -24,15 +24,20 @@ from tsfresh.utilities.dataframe_functions import impute
 from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
 
 
-class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
+class TSFeatureExtractor(BaseEstimator, TransformerMixin):
     """Wrap TSFlattener and TSFreshFeatureExtractor to extract time series features from multiple sequence columns.
 
     The input is an array where rows are observations and columns are sequence features. Each sequence feature is a
-    string containing a sequence of comma-separate numbers.
+    string containing a sequence of comma-separate values.
 
     For each column, TSFlattener extracts numerical values from the strings and returns a list of np.arrays as output,
     and then TSFreshFeatureExtractor extracts time series features from each list. The outputs from each column are then
     stacked horizontally into a single array.
+
+    Examples of features are the mean, median, kurtosis, and autocorrelation of each sequence. The full list of
+    extracted features can be found at https://tsfresh.readthedocs.io/en/latest/text/list_of_features.html.
+
+    Any value in the input strings that can't be turned into a finite float is converted to a np.nan.
 
     See TSFlattener and TSFreshFeatureExtractor for more details.
 
@@ -46,7 +51,7 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         If a sequence length exceeds ``max_allowed_length``, trim its start and only keep the last `max_allowed_length``
         values if ``trim_beginning`` = True, otherwise trim the end and only keep the first max_allowed_length values.
 
-    augment : boolean (default=True):
+    augment : boolean (default=False):
         Whether to append the tsfresh features to the original data (if True),
         or output only the extracted tsfresh features (if False).
         If True, also pad shorter sequences (if any) in the original data with np.nans, so that all sequences
@@ -67,14 +72,14 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
 
     Examples
     --------
-    >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TimeSeriesFeatureExtractor
+    >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
     >>> import numpy as np
     >>> data = [["1,, 3, 44", "3, 4, 5, 6"], ["11, 111", "1, 1, 2, 2"], ["NaN, , 1, NaN", "2, 1, 3, 2"]]
-    >>> ts_pipeline = TimeSeriesFeatureExtractor(augment=True)
+    >>> ts_pipeline = TSFeatureExtractor(augment=True)
     >>> X = ts_pipeline.fit_transform(data)
     >>> print(X.shape)
     (3, 1570)
-    >>> ts_pipeline = TimeSeriesFeatureExtractor(augment=False)
+    >>> ts_pipeline = TSFeatureExtractor(augment=False)
     >>> X = ts_pipeline.fit_transform(data)
     >>> print(X.shape)
     (3, 1562)
@@ -84,12 +89,13 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         self,
         max_allowed_length=10000,
         trim_beginning=True,
-        augment=True,
+        augment=False,
         interpolation_method="hybrid",
         extraction_type="efficient",
     ):
         super().__init__()
-        assert max_allowed_length > 0, f"{max_allowed_length} must be positive."
+        if max_allowed_length <= 0:
+            raise ValueError(f"{max_allowed_length} must be positive.\n")
         self.max_allowed_length = max_allowed_length
         self.trim_beginning = trim_beginning
         self.augment = augment
@@ -178,7 +184,8 @@ class TSFlattener(BaseEstimator, TransformerMixin):
 
     def __init__(self, max_allowed_length=10000, trim_beginning=True):
         super().__init__()
-        assert max_allowed_length > 0, f"{max_allowed_length} must be positive."
+        if max_allowed_length <= 0:
+            raise ValueError(f"{max_allowed_length} must be positive.\n")
         self.max_allowed_length = max_allowed_length
         self.trim_beginning = trim_beginning
 
@@ -208,10 +215,11 @@ class TSFlattener(BaseEstimator, TransformerMixin):
     def _convert_to_numeric(self, X):
         numeric_sequences = []
         for string_sequence in X:
-            assert len(string_sequence) == 1, (
-                f"TSFlattener can process a single sequence column at a time, "
-                f"but it was given {len(string_sequence)} sequence columns."
-            )
+            if len(string_sequence) != 1:
+                raise ValueError(
+                    f"TSFlattener can process a single sequence column at a time, "
+                    f"but it was given {len(string_sequence)} sequence columns.\n"
+                )
             numeric_sequence = []
             if string_sequence[0] is not None:
                 for s in string_sequence[0].split(","):
@@ -253,7 +261,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    augment : boolean (default=True):
+    augment : boolean (default=False):
         Whether to append the tsfresh features to the original data (if True),
         or output only the extracted tsfresh features (if False).
         If True, also pad shorter sequences (if any) in the original data with np.nans, so that all sequences
@@ -298,7 +306,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     (3, 781)
     """
 
-    def __init__(self, augment=True, interpolation_method="hybrid", extraction_type="efficient"):
+    def __init__(self, augment=False, interpolation_method="hybrid", extraction_type="efficient"):
         super().__init__()
         self.augment = augment
         self.interpolation_method = interpolation_method

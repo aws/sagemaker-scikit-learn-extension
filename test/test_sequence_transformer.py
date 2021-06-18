@@ -16,7 +16,7 @@ import pytest
 
 from sklearn.utils.testing import assert_array_almost_equal
 
-from sagemaker_sklearn_extension.feature_extraction.sequences import TimeSeriesFeatureExtractor
+from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFlattener
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
 
@@ -111,7 +111,7 @@ def test_flattener_with_truncation(X, X_expected, trim_beginning):
 
 
 def test_flattener_transform_input_error():
-    with pytest.raises(AssertionError, match=flattener_error_msg):
+    with pytest.raises(ValueError, match=flattener_error_msg):
         ts_flattener = TSFlattener()
         ts_flattener.transform(X_multiple_sequences)
 
@@ -194,12 +194,12 @@ def test_full_time_series_pipeline(X, X_expected):
     ts_flattener = TSFlattener()
     X_flattened = ts_flattener.transform(X)
     # Compute tsfresh features
-    tsfresh_feature_extractor = TSFreshFeatureExtractor(extraction_type="all")
+    tsfresh_feature_extractor = TSFreshFeatureExtractor(extraction_type="all", augment=True)
     tsfresh_feature_extractor.fit(X_flattened)
     X_with_features_combined_transformers = tsfresh_feature_extractor.transform(X_flattened)
     X_observed_combined_transformers = X_with_features_combined_transformers[:5, :5]
-    # Repeat the above in a single step with the TimeSeriesFeatureExtractor wrapper
-    time_series_feature_extractor = TimeSeriesFeatureExtractor(extraction_type="all")
+    # Repeat the above in a single step with the TSFeatureExtractor wrapper
+    time_series_feature_extractor = TSFeatureExtractor(extraction_type="all", augment=True)
     X_with_features_time_series_transformer = time_series_feature_extractor.fit_transform(X)
     X_observed_time_series_transformer = X_with_features_time_series_transformer[:5, :5]
     # Compare the two outputs with each other and with the expected result
@@ -213,7 +213,7 @@ def test_full_time_series_pipeline(X, X_expected):
     [(X_multiple_sequences, X_filled_with_first_feature), (X_sequence_missing, X_filled_with_first_feature),],
 )
 def test_time_series_feature_extractor_multiple_columns(X, X_expected):
-    time_series_feature_extractor = TimeSeriesFeatureExtractor(augment=True, extraction_type="all")
+    time_series_feature_extractor = TSFeatureExtractor(augment=True, extraction_type="all")
     X_with_features_time_series_transformer = time_series_feature_extractor.fit_transform(X)
     num_sequence_columns = np.array(X).shape[1]
     # The output is expected to have 787 features (extracted from tsfresh) for each sequence column in the input,
