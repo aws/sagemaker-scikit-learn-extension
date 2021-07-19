@@ -2,3 +2,5 @@ numpy>=1.16.4
 psutil
 scikit-learn==0.23.2
 python-dateutil==2.8.0
+pandas==1.2.4
+tsfresh==0.18.0

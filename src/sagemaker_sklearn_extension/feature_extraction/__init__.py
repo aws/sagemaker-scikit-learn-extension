@@ -19,6 +19,7 @@ to extract features from text. This module is based on the
 """
 
 from . import date_time
+from . import sequences
 from . import text
 
-__all__ = ["date_time", "text"]
+__all__ = ["date_time", "sequences", "text"]

@@ -115,6 +115,9 @@ Overview of Submodules
    * :code:`read_csv_data` reads comma separated data and returns a numpy array (uses mlio)
 * :code:`sagemaker_sklearn_extension.feature_extraction.date_time`
    * :code:`DateTimeVectorizer` convert datetime objects or strings into numeric features
+* :code:`sagemaker_sklearn_extension.feature_extraction.sequences`
+   * :code:`TSFlattener` convert strings of sequences into numeric features
+   * :code:`TSFreshFeatureExtractor` compute row-wise time series features from a numpy array (uses tsfresh)
 * :code:`sagemaker_sklearn_extension.feature_extraction.text`
    * :code:`MultiColumnTfidfVectorizer` convert collections of raw documents to a matrix of TF-IDF features
 * :code:`sagemaker_sklearn_extension.impute`

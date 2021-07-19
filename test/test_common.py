@@ -20,6 +20,9 @@ from sklearn.utils.estimator_checks import check_estimator
 
 from sagemaker_sklearn_extension.feature_extraction.text import MultiColumnTfidfVectorizer
 from sagemaker_sklearn_extension.feature_extraction.date_time import DateTimeVectorizer
+from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
+from sagemaker_sklearn_extension.feature_extraction.sequences import TSFlattener
+from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
 from sagemaker_sklearn_extension.impute import RobustImputer
 from sagemaker_sklearn_extension.impute import RobustMissingIndicator
 from sagemaker_sklearn_extension.preprocessing import LogExtremeValuesTransformer
@@ -49,6 +52,9 @@ from sagemaker_sklearn_extension.preprocessing import WOEEncoder
         RobustStandardScaler(),
         ThresholdOneHotEncoder(),
         WOEEncoder(),
+        TSFeatureExtractor(),
+        TSFlattener(),
+        TSFreshFeatureExtractor(),
     ],
 )
 def test_all_estimators(Estimator):
