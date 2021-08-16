@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.3.0 (2021-08-16)
+
+### Features
+
+ * transformers for time series
+
 ## v2.2.1 (2021-05-21)
 
 ### Bug fixes and other changes
