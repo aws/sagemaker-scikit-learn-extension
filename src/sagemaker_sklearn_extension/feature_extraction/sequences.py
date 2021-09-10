@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+from math import ceil
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,10 @@ from tsfresh.feature_extraction import MinimalFCParameters
 from tsfresh.utilities.dataframe_functions import impute
 
 from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
+
+
+DEFAULT_INPUT_SEQUENCE_LENGTH = 1000
+SEQUENCE_EXPANSION_FACTOR = 2.5
 
 
 class TSFeatureExtractor(BaseEstimator, TransformerMixin):
@@ -70,6 +75,14 @@ class TSFeatureExtractor(BaseEstimator, TransformerMixin):
         'efficient': extract 781 tsfresh features, namely all of them except for the expensive to compute ones
         'all': extract all 787 tsfresh features
 
+    extraction_seed : int (default = 0)
+        Random seed used to choose subset of features, when expansion control does not allow to include all features
+
+    sequences_lengths_q25 : list of ints (default = None)
+        List contianing 25th percentile of sequence lengths for each column at the train step.
+        Length of the list should correspond to total number of columns in the input.
+        If not provided, default value will be assigned at the fit stage.
+
     Examples
     --------
     >>> from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
@@ -92,6 +105,8 @@ class TSFeatureExtractor(BaseEstimator, TransformerMixin):
         augment=False,
         interpolation_method="hybrid",
         extraction_type="efficient",
+        extraction_seed=0,
+        sequences_lengths_q25=None,
     ):
         super().__init__()
         if max_allowed_length <= 0:
@@ -101,17 +116,30 @@ class TSFeatureExtractor(BaseEstimator, TransformerMixin):
         self.augment = augment
         self.interpolation_method = interpolation_method
         self.extraction_type = extraction_type
+        self.extraction_seed = extraction_seed
+        self.sequences_lengths_q25 = sequences_lengths_q25
 
     def fit(self, X, y=None):
         X = check_array(X, dtype=None, force_all_finite="allow-nan")
+
+        if self.sequences_lengths_q25 is None:
+            self.sequences_lengths_q25 = [DEFAULT_INPUT_SEQUENCE_LENGTH] * X.shape[1]
+
+        if len(self.sequences_lengths_q25) != X.shape[1]:
+            raise ValueError(
+                f"length of sequences_lengths_q25 should be equal to number of columns in X (={X.shape[1]})."
+            )
+
         ts_flattener = TSFlattener(max_allowed_length=self.max_allowed_length, trim_beginning=self.trim_beginning)
         tsfresh_feature_extractors = []
-        for sequence_column in X.T:
+        for sequence_column_i, sequence_column in enumerate(X.T):
             numeric_sequences = ts_flattener.transform(sequence_column.reshape(-1, 1))
             tsfresh_feature_extractor = TSFreshFeatureExtractor(
                 augment=self.augment,
                 interpolation_method=self.interpolation_method,
                 extraction_type=self.extraction_type,
+                extraction_seed=self.extraction_seed,
+                sequence_length_q25=self.sequences_lengths_q25[sequence_column_i],
             )
             tsfresh_feature_extractor.fit(numeric_sequences)
             tsfresh_feature_extractors.append(tsfresh_feature_extractor)
@@ -280,6 +308,13 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         'efficient': extract 781 tsfresh features, namely all of them except for the expensive to compute ones
         'all': extract all 787 tsfresh features
 
+    extraction_seed : int (default = 0)
+        Random seed used to choose subset of features, when expansion control does not allow to include all features
+
+    sequence_length_q25 : list of ints (default = None)
+        List contianing 25th percentile of sequence lengths for each column at the train step.
+        If not provided, default value will be assigned (DEFAULT_INPUT_SEQUENCE_LENGTH).
+
     Attributes
     ----------
     self.robust_standard_scaler_ : ``sagemaker_sklearn_extension.preprocessing.data.RobustStandardScaler``
@@ -306,17 +341,30 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     (3, 781)
     """
 
-    def __init__(self, augment=False, interpolation_method="hybrid", extraction_type="efficient"):
+    def __init__(
+        self,
+        augment=False,
+        interpolation_method="hybrid",
+        extraction_type="efficient",
+        extraction_seed=0,
+        sequence_length_q25=None,
+    ):
         super().__init__()
         self.augment = augment
         self.interpolation_method = interpolation_method
         self.extraction_type = extraction_type
+        self.feature_sampling_seed = extraction_seed
+        self.sequence_length_q25 = sequence_length_q25 or DEFAULT_INPUT_SEQUENCE_LENGTH
+        self.expansion_threshold = self._compute_expansion_threshold(self.sequence_length_q25)
+        self.robust_standard_scaler_ = RobustStandardScaler()
 
     def fit(self, X, y=None):
         tsfresh_features, _ = self._extract_tsfresh_features(X)
-        robust_standard_scaler = RobustStandardScaler()
-        robust_standard_scaler.fit(tsfresh_features)
-        self.robust_standard_scaler_ = robust_standard_scaler
+
+        # not all features included due to data expansion control
+        tsfresh_features = self._filter_features(tsfresh_features, mode="train")
+
+        self.robust_standard_scaler_.fit(tsfresh_features)
         return self
 
     def transform(self, X, y=None):
@@ -332,7 +380,11 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
 
         """
         check_is_fitted(self, "robust_standard_scaler_")
+        transform_thresholds = [self._compute_expansion_threshold(len(seq)) for seq in X]
         tsfresh_features, X_df = self._extract_tsfresh_features(X)
+        tsfresh_features = self._filter_features(
+            tsfresh_features, mode="transform", transform_thresholds=transform_thresholds
+        )
         tsfresh_features = self.robust_standard_scaler_.transform(tsfresh_features)
         if self.augment:
             # Stack the extracted features to the original sequences in X, after padding with np.nans any shorter
@@ -393,30 +445,79 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
     def _extract_tsfresh_features(self, X):
         X_df = self._convert_to_df(X)
         X_df_no_nans = X_df.dropna()
-        if self.extraction_type == "minimal":
-            extraction_setting = MinimalFCParameters()
-        elif self.extraction_type == "efficient":
-            extraction_setting = EfficientFCParameters()
-        elif self.extraction_type == "all":
-            extraction_setting = ComprehensiveFCParameters()
-        else:
+        # covering corner case when all nans
+        if X_df_no_nans.shape[0] == 0:
+            X_df_no_nans = X_df.loc[[0]].fillna(0)
+        if self.extraction_type not in ["minimal", "efficient", "all"]:
             raise ValueError(
                 f"{self.extraction_type} is not a supported feature extraction option. Please choose one from "
                 f"the following options: [minimal, efficient, all]."
             )
+        min_settings = MinimalFCParameters()
         # Extract time series features from the dataframe
         # Replace any ``NaNs`` and ``infs`` in the extracted features with median/extreme values for that column
         tsfresh_features = extract_features(
             X_df_no_nans,
-            default_fc_parameters=extraction_setting,
+            default_fc_parameters=min_settings,
             column_id="id",
             column_sort="time",
             impute_function=impute,
+            n_jobs=0,
         )
+        self.min_settings_card = tsfresh_features.shape[1]
+        # Minimal features computed indepdently to ensure they go first in the output,
+        # this is needed to ensure their survival when filtering features
+        if self.extraction_type in ["efficient", "all"]:
+            if self.extraction_type == "efficient":
+                settings = EfficientFCParameters()
+            else:
+                settings = ComprehensiveFCParameters()
+            settings = {k: v for k, v in settings.items() if k not in min_settings}
+            tsfresh_features_extra = extract_features(
+                X_df_no_nans,
+                default_fc_parameters=settings,
+                column_id="id",
+                column_sort="time",
+                impute_function=impute,
+                n_jobs=0,
+            )
+            self.extra_settings_card = tsfresh_features_extra.shape[1]
+            tsfresh_features = pd.concat([tsfresh_features, tsfresh_features_extra], axis=1)
+
         # If X_df.dropna() dropped some observations entirely (i.e., due to all NaNs),
         # impute each tsfresh feature for those observations with the median of that tsfresh feature
         tsfresh_features_imputed = impute(tsfresh_features.reindex(pd.RangeIndex(X_df["id"].max() + 1)))
         return tsfresh_features_imputed, X_df
+
+    def _filter_features(self, tsfresh_features, mode="transform", transform_thresholds=None):
+        if self.expansion_threshold < self.min_settings_card:
+            raise ValueError(
+                f"Provided filter threshold(s) (= {self.expansion_threshold}) can not be smaller than "
+                f"number of features generated by minimal settings (= {self.min_settings_card})"
+            )
+        filter_order = np.arange(self.min_settings_card, tsfresh_features.shape[1])
+        random_state = np.random.get_state()
+        np.random.seed(self.feature_sampling_seed)
+        np.random.shuffle(filter_order)
+        np.random.set_state(random_state)
+        survivors = list(range(self.min_settings_card)) + list(
+            filter_order[: self.expansion_threshold - self.min_settings_card]
+        )
+        tsfresh_features = tsfresh_features.iloc[:, survivors]
+
+        if mode == "transform":
+            if len(transform_thresholds) != tsfresh_features.shape[0]:
+                raise ValueError(
+                    f"In 'transform' mode transform_thresholds should have number of entries "
+                    f"(= {len(transform_thresholds)}) that corresponds to the number of records "
+                    f"in tsfresh_features (= {tsfresh_features.shape[0]})."
+                )
+            for thrsh_i, thrsh in enumerate(transform_thresholds):
+                tsfresh_features.iloc[thrsh_i, thrsh:] = 0
+        return tsfresh_features
+
+    def _compute_expansion_threshold(self, input_len):
+        return int(max(ceil(SEQUENCE_EXPANSION_FACTOR * input_len + 1) + 1, 10))
 
     def _more_tags(self):
         return {"_skip_test": True, "allow_nan": True}
