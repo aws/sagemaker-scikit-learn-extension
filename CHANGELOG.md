@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.4.0 (2021-09-23)
+
+### Features
+
+ * expansion control for TSFeatureExtractor
+
+### Bug fixes and other changes
+
+ * Merge pull request #38 from nikitaivkin/master
+
 ## v2.3.0 (2021-08-16)
 
 ### Features
