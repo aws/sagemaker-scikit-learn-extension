@@ -20,6 +20,7 @@ from sagemaker_sklearn_extension.preprocessing import RobustLabelEncoder
 from sagemaker_sklearn_extension.preprocessing import ThresholdOneHotEncoder
 from sagemaker_sklearn_extension.preprocessing import RobustOrdinalEncoder
 from sagemaker_sklearn_extension.preprocessing import WOEEncoder
+from sagemaker_sklearn_extension.preprocessing import SimilarityEncoder
 
 
 X = np.array([["hot dog", 1], ["hot dog", 1], ["apple", 2], ["hot dog", 3], ["hot dog", 1], ["banana", 3]])
@@ -578,3 +579,50 @@ def test_woe_multi_cols():
     Xe = enc.fit_transform(X, titanic_y)
     assert len(np.unique(Xe[:, 0])) == 4
     assert len(np.unique(Xe[:, 1])) == 4
+
+
+def test_similarity_consistent():
+    X = np.array(
+        [
+            "cat1",
+            "cat2",
+            "cat1",
+            "abcdefghijkkjihgfedcba",
+            "abcdefghijkkjihgfedcab",
+            "lmnopqrstuvwxyzzyxwvutsrqponml",
+            "a",
+            "b",
+        ]
+    ).reshape((-1, 1))
+    se = SimilarityEncoder(target_dimension=300, seed=5)
+    out = se.fit_transform(X)
+    # exact equal strings should get equal vectors
+    assert np.array_equal(out[0], out[2])
+    # completely different strings should get different vectors
+    assert not np.array_equal(out[0], out[1])
+    # output 3,4 should be similar vectors, meaning closer than the vectors of 3 and 5 since these are very
+    # different strings
+    assert np.linalg.norm(out[3] - out[4]) < np.linalg.norm(out[3] - out[5])
+    # make sure single character inputs also get different outputs
+    assert not np.array_equal(out[6], out[7])
+
+
+def test_similarity_multicol():
+    X = np.array([["cat1a", "cat1b"], ["cat2a", "cat2b"], ["cat1a", "cat1b"]])
+    se = SimilarityEncoder(target_dimension=3, seed=5)
+    out = se.fit_transform(X)
+    assert out.shape[1] == 6
+
+
+def test_similarity_fails_ilegal_target_dim():
+    X = np.array(["cat1", "cat2", "cat1"]).reshape((-1, 1))
+    se = SimilarityEncoder(target_dimension=0, seed=5)
+    with pytest.raises(Exception):
+        se.fit_transform(X)
+
+
+def test_similarity_handles_empty_string():
+    X = np.array(["", " ", "  ", "-1201230()*&(*&%$#!", None, np.nan]).reshape((-1, 1))
+    se = SimilarityEncoder(target_dimension=3, seed=5)
+    out = se.fit_transform(X)
+    assert out.shape == (6, 3)

@@ -916,3 +916,141 @@ class WOEEncoder(BaseEstimator, TransformerMixin):
 
     def _more_tags(self):
         return {"X_types": ["categorical"], "binary_only": True, "requires_y": True}
+
+
+class SimilarityAsserts(Enum):
+    TARGET_DIM = "Target dimension must be a positive integer."
+
+
+class SimilarityEncoder(BaseEstimator, TransformerMixin):
+    """Similarity encoder: encodes categorical features as a numerical vector
+    using their textual representation. Categories with similar descriptions are mapped to
+    similar vectors.
+    The underlying method used is locally sensitive hashing (LSH [2]) of the character level 3-gram
+    tokens. The similarity between two category description is defined as the Jackard
+    similarity between their corresponding bags of 3-grams. The known min-hash [3] embedding is
+    then used to convert these token sets into vectors in a way that the l_0 distance, defined
+    as the number of different entries, approximates the Jackard distance. This technique has
+    been provided in [1] and shown to significantly outperform 1-hot encoding in scenarios where
+    the number of categories is large.
+
+    Parameters
+    ----------
+    target_dimension: int, default=30
+        Dimension of the embedding. Small target dimension might not represent the categories in a descriptive enough
+        way, and large target dimension take longer to compute and might result in over-fitting. For large datasets
+        and a number of categories much larger than 30, consider raising this value.
+
+    seed: int, default=None
+        seed for random number generation. Used when fitting and setting the hash functions
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> from sagemaker_sklearn_extension.preprocessing import SimilarityEncoder
+    >>> category_data = np.array(['table', 'chair', 'table (red)', 'ladder', 'table (blue)', 'table'])
+    >>> SimilarityEncoder(target_dimension=2, seed=112).fit_transform(category_data.reshape(-1, 1))
+    array([[0.06143999, 0.08793556],
+           [0.29021414, 0.29044514],
+           [0.06143999, 0.08793556],
+           [0.1312301 , 0.0455779 ],
+           [0.06143999, 0.08793556],
+           [0.06143999, 0.08793556]])
+
+    Attributes
+    ----------
+    hash_prime_: prime used for hash funtions
+        Hash functions operate on integers. A function consists of two numbers a,b and an integer x is hashed into
+        x*a+b modulo hash_prime. To avoid overflows we use int64 and the largest prime p such that p*p < 2^63 -1, the
+        maximum int64 value.
+
+    References
+    ----------
+    [1] https://arxiv.org/abs/1907.01860
+    [2] https://en.wikipedia.org/wiki/Locality-sensitive_hashing
+    [3] https://en.wikipedia.org/wiki/MinHash
+    """
+
+    def __init__(self, target_dimension=30, seed=None):
+        self.target_dimension = target_dimension
+        self.seed = seed
+
+    def fit(self, X=None, y=None):
+        """Fit Similarity encoder.
+        Ignores input data. This fixes the hash funtion(s) to be used for the minhash encoding
+
+        Parameters
+        ----------
+        X: array-like, shape (n_samples, n_features)
+            The data to encode.
+
+        y: array-like, shape (n_samples,)
+            The binary target vector.
+
+        Returns
+        -------
+        self: SimilarityEncoder.
+        """
+        # Validate parameters
+        assert isinstance(self.target_dimension, int) and self.target_dimension > 0, SimilarityAsserts.TARGET_DIM
+
+        # prime to be used for hash function (largest prime p such that p**2 is still within int64 range)
+        self.hash_prime_ = 2038074743
+        # random numbers for hash functions
+        generator = np.random.RandomState(seed=self.seed)
+        self._mult = generator.randint(low=1, high=self.hash_prime_, size=(self.target_dimension, 1))
+        self._add = generator.randint(low=0, high=self.hash_prime_, size=(self.target_dimension, 1))
+        return self
+
+    def _minhash_index_sparse_vec(self, vec):
+        # prepare tokens as valid integers
+        ind = vec.indices.astype(np.int64)
+        ind %= self.hash_prime_
+        # if the vector was zero, ind is an empty list. In this case fill it with a single zero. This is needed to
+        # avoid an error below when taking a minimum along an axis
+        if ind.shape == (0,):
+            ind = np.zeros((1,), dtype=np.int64)
+
+        # compute for each token its hash values, create a matrix of dimensions (num_hash, num_tokens)
+        all_hash_values = self._mult * ind.reshape((1, -1)) + self._add
+        all_hash_values %= self.hash_prime_
+
+        # compute row-wise min to get vector of length num_hash
+        hash_values = np.min(all_hash_values, axis=1)
+
+        # normalize in [0,1)
+        return hash_values.astype(np.float64) / self.hash_prime_
+
+    def transform(self, X):
+        """Transform each column of `X` using the Similarity encoding.
+
+        Returns
+        -------
+        X_encoded: array, shape (n_samples, n_encoded_features * target_dimension)
+            Array with each of the encoded columns.
+        """
+        check_is_fitted(self, "hash_prime_")
+        X = check_array(X, dtype=str)
+
+        # remember shape, flatten X to be 1dim, and convert to string. Note - this makes sure all None values become
+        # the string 'None'. This is acceptible behavior
+        str_list = X.reshape((-1,)).astype("str")
+        # replace nones
+        # tokenize each string
+        # convert each token array into integers via hash function
+        from sklearn.feature_extraction.text import HashingVectorizer
+
+        # TODO: In the paper this function is based on the ngram number was fixed as 3. As a follow up, consider
+        #  parametrizing this.
+        hv = HashingVectorizer(analyzer="char_wb", ngram_range=(3, 3), binary=True)
+        token_hash_matrix = hv.fit_transform(str_list)
+        # apply minhash
+        minhash_vectors = np.array([self._minhash_index_sparse_vec(row) for row in token_hash_matrix])
+        # reshape back
+        return minhash_vectors.reshape((X.shape[0], X.shape[1] * self.target_dimension))
+
+    def fit_transform(self, X, y=None):
+        return self.fit(X, y).transform(X)
+
+    def _more_tags(self):
+        return {"X_types": ["string"]}
