@@ -24,6 +24,7 @@ from .encoders import RobustLabelEncoder
 from .encoders import RobustOrdinalEncoder
 from .encoders import ThresholdOneHotEncoder
 from .encoders import WOEEncoder
+from .encoders import SimilarityEncoder
 
 __all__ = [
     "BaseExtremeValueTransformer",
@@ -39,4 +40,5 @@ __all__ = [
     "log_transform",
     "quantile_transform_nonrandom",
     "WOEEncoder",
+    "SimilarityEncoder",
 ]

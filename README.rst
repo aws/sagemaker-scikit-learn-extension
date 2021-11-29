@@ -134,3 +134,4 @@ Overview of Submodules
    * :code:`RobustLabelEncoder` encode labels for seen and unseen labels
    * :code:`RobustStandardScaler` standardization for dense and sparse inputs
    * :code:`WOEEncoder` weight of evidence supervised encoder
+   * :code:`SimilarityEncoder` encode categorical values based on their descriptive string
