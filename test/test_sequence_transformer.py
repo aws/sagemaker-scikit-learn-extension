@@ -13,12 +13,16 @@
 
 import numpy as np
 import pytest
-
+import tsfresh
+import sagemaker_sklearn_extension.feature_extraction.sequences
+import importlib
 from sklearn.utils.testing import assert_array_almost_equal
-
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFlattener
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
+from tsfresh.defaults import N_PROCESSES
+
+
 
 # To test TSFlattener with and without missing values encoded in different ways
 # with fixed-length inputs
@@ -254,3 +258,23 @@ def test_time_series_all_nan_column():
     time_series_feature_extractor = TSFeatureExtractor(extraction_type="efficient", augment=False)
     X_out = time_series_feature_extractor.fit_transform(X_all_nan_column)
     assert X_out.shape[0] == 4
+
+
+@pytest.mark.parametrize(
+    "env, n_jobs",
+    [
+        (["SAGEMAKER_PROGRAM", "sagemaker_serve"], 0),
+        (["SAGEMAKER_PROGRAM", "train"], N_PROCESSES),
+        (["key", "value"], N_PROCESSES),
+    ],
+)
+def test_tsfresh_extractor_njobs_is_ncpus_when_non_sagemaker_serve_env(monkeypatch, env, n_jobs):
+    monkeypatch.setenv(env[0], env[1])
+
+    def mocked_extract(*args, **kwargs):
+        assert (kwargs["n_jobs"]) == n_jobs
+        return tsfresh.extract_features(*args, **kwargs)
+
+    importlib.reload(sagemaker_sklearn_extension.feature_extraction.sequences)
+    monkeypatch.setattr("sagemaker_sklearn_extension.feature_extraction.sequences.extract_features", mocked_extract)
+    TSFeatureExtractor(extraction_type="efficient", augment=False).fit_transform(X_sequence)

@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import os
 from math import ceil
 
 import numpy as np
@@ -21,12 +22,15 @@ from tsfresh.feature_extraction import ComprehensiveFCParameters
 from tsfresh.feature_extraction import EfficientFCParameters
 from tsfresh.feature_extraction import MinimalFCParameters
 from tsfresh.utilities.dataframe_functions import impute
+from tsfresh.defaults import N_PROCESSES  # the default number of processes used by TSFresh, equals to n_vcores/2
 
 from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
 
 
 DEFAULT_INPUT_SEQUENCE_LENGTH = 1000
 SEQUENCE_EXPANSION_FACTOR = 2.5
+# do not use TSFresh parallelism in container serve(transform), does not work with server's workers
+N_TSFRESH_JOBS = 0 if os.environ.get("SAGEMAKER_PROGRAM") == "sagemaker_serve" else N_PROCESSES
 
 
 class TSFeatureExtractor(BaseEstimator, TransformerMixin):
@@ -462,7 +466,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             column_id="id",
             column_sort="time",
             impute_function=impute,
-            n_jobs=0,
+            n_jobs=N_TSFRESH_JOBS,
         )
         self.min_settings_card = tsfresh_features.shape[1]
         # Minimal features computed indepdently to ensure they go first in the output,
@@ -479,7 +483,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
                 column_id="id",
                 column_sort="time",
                 impute_function=impute,
-                n_jobs=0,
+                n_jobs=N_TSFRESH_JOBS,
             )
             self.extra_settings_card = tsfresh_features_extra.shape[1]
             tsfresh_features = pd.concat([tsfresh_features, tsfresh_features_extra], axis=1)
