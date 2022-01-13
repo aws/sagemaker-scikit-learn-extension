@@ -23,7 +23,6 @@ from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeat
 from tsfresh.defaults import N_PROCESSES
 
 
-
 # To test TSFlattener with and without missing values encoded in different ways
 # with fixed-length inputs
 X_sequence = [["1, 2, 3, 44"], ["11, 12, 14, 111"], ["1, 1, 1, 2"]]
@@ -72,12 +71,15 @@ X_hybrid = np.array([[0, 2, 0], [4, 4, 6], [10, 10, 10]])
 X_all_nan = [[np.nan, np.nan, np.nan, np.nan], [np.nan], [10, 10, 10, 10], [10, 20, 30, 40]]
 X_all_nan_imputed = [[0, 0, 0, 0], [0, 0, 0, 0], [10, 10, 10, 10], [10, 20, 30, 40]]
 # to test that the first tsfresh feature is computed correctly
-X_with_first_feature = np.array([[1, 2, 3, 44, -0.295919], [11, 12, 14, 111, 1.345592], [1, 1, 1, 2, -1.049673]])
+X_with_first_feature = np.array(
+    [[1.0, 2.0, 3.0, 44.0, 50.0], [11.0, 12.0, 14.0, 111.0, 148.0], [1.0, 1.0, 1.0, 2.0, 5.0]]
+)
+
 X_filled_with_first_feature = np.array(
-    [[1.0, 1.0, 3.0, 44.0, -0.236065], [11.0, 12.0, 12.0, 111.0, 1.325594], [0.0, 0.0, 1.0, 0.0, -1.089529]]
+    [[1.0, 1.0, 3.0, 44.0, 48.0], [11.0, 12.0, 12.0, 111.0, 134.0], [0.0, 0.0, 1.0, 0.0, 1.0]]
 )
 X_padded_with_first_feature = np.array(
-    [[1.0, 2.0, 0.0, 0.0, -0.770329], [11.0, 111.0, 0.0, 0.0, 1.41227], [2.0, 3.0, 1.0, 4.0, -0.641941]]
+    [[1.0, 2.0, 0.0, 0.0, 3.0], [11.0, 111.0, 0.0, 0.0, 122.0], [2.0, 3.0, 1.0, 4.0, 10.0]]
 )
 
 

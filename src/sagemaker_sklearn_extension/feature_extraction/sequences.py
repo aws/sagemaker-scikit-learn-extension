@@ -24,7 +24,6 @@ from tsfresh.feature_extraction import MinimalFCParameters
 from tsfresh.utilities.dataframe_functions import impute
 from tsfresh.defaults import N_PROCESSES  # the default number of processes used by TSFresh, equals to n_vcores/2
 
-from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
 
 
 DEFAULT_INPUT_SEQUENCE_LENGTH = 1000
@@ -319,12 +318,6 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         List contianing 25th percentile of sequence lengths for each column at the train step.
         If not provided, default value will be assigned (DEFAULT_INPUT_SEQUENCE_LENGTH).
 
-    Attributes
-    ----------
-    self.robust_standard_scaler_ : ``sagemaker_sklearn_extension.preprocessing.data.RobustStandardScaler``
-        - `robust_standard_scaler_` is instantiated inside the fit method used for computing the mean and
-        the standard deviation.
-
 
     Examples
     --------
@@ -360,15 +353,9 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         self.feature_sampling_seed = extraction_seed
         self.sequence_length_q25 = sequence_length_q25 or DEFAULT_INPUT_SEQUENCE_LENGTH
         self.expansion_threshold = self._compute_expansion_threshold(self.sequence_length_q25)
-        self.robust_standard_scaler_ = RobustStandardScaler()
 
     def fit(self, X, y=None):
-        tsfresh_features, _ = self._extract_tsfresh_features(X)
-
-        # not all features included due to data expansion control
-        tsfresh_features = self._filter_features(tsfresh_features, mode="train")
-
-        self.robust_standard_scaler_.fit(tsfresh_features)
+        # Nothing to learn during fit.
         return self
 
     def transform(self, X, y=None):
@@ -383,13 +370,11 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         tsfresh_features : np.array
 
         """
-        check_is_fitted(self, "robust_standard_scaler_")
         transform_thresholds = [self._compute_expansion_threshold(len(seq)) for seq in X]
         tsfresh_features, X_df = self._extract_tsfresh_features(X)
         tsfresh_features = self._filter_features(
             tsfresh_features, mode="transform", transform_thresholds=transform_thresholds
         )
-        tsfresh_features = self.robust_standard_scaler_.transform(tsfresh_features)
         if self.augment:
             # Stack the extracted features to the original sequences in X, after padding with np.nans any shorter
             # input sequences in X to match the length of the longest sequence, and imputing missing values as
