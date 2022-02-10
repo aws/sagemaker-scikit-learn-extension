@@ -10,6 +10,7 @@
 # distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
+import os
 from math import ceil
 
 import numpy as np
@@ -21,12 +22,13 @@ from tsfresh.feature_extraction import ComprehensiveFCParameters
 from tsfresh.feature_extraction import EfficientFCParameters
 from tsfresh.feature_extraction import MinimalFCParameters
 from tsfresh.utilities.dataframe_functions import impute
+from tsfresh.defaults import N_PROCESSES  # the default number of processes used by TSFresh, equals to n_vcores/2
 
-from sagemaker_sklearn_extension.preprocessing.data import RobustStandardScaler
-
-
+TOTAL_EXPANSION_THRESHOLD = 2500
 DEFAULT_INPUT_SEQUENCE_LENGTH = 1000
 SEQUENCE_EXPANSION_FACTOR = 2.5
+# do not use TSFresh parallelism in container serve(transform), does not work with server's workers
+N_TSFRESH_JOBS = 0 if os.environ.get("SAGEMAKER_PROGRAM") == "sagemaker_serve" else N_PROCESSES
 
 
 class TSFeatureExtractor(BaseEstimator, TransformerMixin):
@@ -129,7 +131,10 @@ class TSFeatureExtractor(BaseEstimator, TransformerMixin):
             raise ValueError(
                 f"length of sequences_lengths_q25 should be equal to number of columns in X (={X.shape[1]})."
             )
-
+        # cap total expansion for all columns
+        expansion_thresholds = np.ceil(
+            (self.sequences_lengths_q25 / np.sum(self.sequences_lengths_q25)) * TOTAL_EXPANSION_THRESHOLD
+        )
         ts_flattener = TSFlattener(max_allowed_length=self.max_allowed_length, trim_beginning=self.trim_beginning)
         tsfresh_feature_extractors = []
         for sequence_column_i, sequence_column in enumerate(X.T):
@@ -140,6 +145,7 @@ class TSFeatureExtractor(BaseEstimator, TransformerMixin):
                 extraction_type=self.extraction_type,
                 extraction_seed=self.extraction_seed,
                 sequence_length_q25=self.sequences_lengths_q25[sequence_column_i],
+                expansion_threshold=int(expansion_thresholds[sequence_column_i]),
             )
             tsfresh_feature_extractor.fit(numeric_sequences)
             tsfresh_feature_extractors.append(tsfresh_feature_extractor)
@@ -315,12 +321,6 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         List contianing 25th percentile of sequence lengths for each column at the train step.
         If not provided, default value will be assigned (DEFAULT_INPUT_SEQUENCE_LENGTH).
 
-    Attributes
-    ----------
-    self.robust_standard_scaler_ : ``sagemaker_sklearn_extension.preprocessing.data.RobustStandardScaler``
-        - `robust_standard_scaler_` is instantiated inside the fit method used for computing the mean and
-        the standard deviation.
-
 
     Examples
     --------
@@ -348,6 +348,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         extraction_type="efficient",
         extraction_seed=0,
         sequence_length_q25=None,
+        expansion_threshold=None,
     ):
         super().__init__()
         self.augment = augment
@@ -355,16 +356,13 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         self.extraction_type = extraction_type
         self.feature_sampling_seed = extraction_seed
         self.sequence_length_q25 = sequence_length_q25 or DEFAULT_INPUT_SEQUENCE_LENGTH
-        self.expansion_threshold = self._compute_expansion_threshold(self.sequence_length_q25)
-        self.robust_standard_scaler_ = RobustStandardScaler()
+        expansion_threshold = expansion_threshold or self._compute_expansion_threshold(self.sequence_length_q25)
+        self.expansion_threshold = min(expansion_threshold, self._compute_expansion_threshold(self.sequence_length_q25))
+        # expansion_threshold will be the stricter between the one computed for this column and the one respecting
+        # the total expansion for all columns
 
     def fit(self, X, y=None):
-        tsfresh_features, _ = self._extract_tsfresh_features(X)
-
-        # not all features included due to data expansion control
-        tsfresh_features = self._filter_features(tsfresh_features, mode="train")
-
-        self.robust_standard_scaler_.fit(tsfresh_features)
+        # Nothing to learn during fit.
         return self
 
     def transform(self, X, y=None):
@@ -379,13 +377,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
         tsfresh_features : np.array
 
         """
-        check_is_fitted(self, "robust_standard_scaler_")
-        transform_thresholds = [self._compute_expansion_threshold(len(seq)) for seq in X]
         tsfresh_features, X_df = self._extract_tsfresh_features(X)
-        tsfresh_features = self._filter_features(
-            tsfresh_features, mode="transform", transform_thresholds=transform_thresholds
-        )
-        tsfresh_features = self.robust_standard_scaler_.transform(tsfresh_features)
         if self.augment:
             # Stack the extracted features to the original sequences in X, after padding with np.nans any shorter
             # input sequences in X to match the length of the longest sequence, and imputing missing values as
@@ -462,7 +454,7 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             column_id="id",
             column_sort="time",
             impute_function=impute,
-            n_jobs=0,
+            n_jobs=N_TSFRESH_JOBS,
         )
         self.min_settings_card = tsfresh_features.shape[1]
         # Minimal features computed indepdently to ensure they go first in the output,
@@ -473,51 +465,74 @@ class TSFreshFeatureExtractor(BaseEstimator, TransformerMixin):
             else:
                 settings = ComprehensiveFCParameters()
             settings = {k: v for k, v in settings.items() if k not in min_settings}
-            tsfresh_features_extra = extract_features(
-                X_df_no_nans,
-                default_fc_parameters=settings,
-                column_id="id",
-                column_sort="time",
-                impute_function=impute,
-                n_jobs=0,
-            )
-            self.extra_settings_card = tsfresh_features_extra.shape[1]
-            tsfresh_features = pd.concat([tsfresh_features, tsfresh_features_extra], axis=1)
+
+            self._apply_feature_threshold(settings)
+            if settings:
+                # check that efficient strategies are not emptied when applying expansion threshold
+                tsfresh_features_extra = extract_features(
+                    X_df_no_nans,
+                    default_fc_parameters=settings,
+                    column_id="id",
+                    column_sort="time",
+                    impute_function=impute,
+                    n_jobs=N_TSFRESH_JOBS,
+                )
+                tsfresh_features = pd.concat([tsfresh_features, tsfresh_features_extra], axis=1)
 
         # If X_df.dropna() dropped some observations entirely (i.e., due to all NaNs),
         # impute each tsfresh feature for those observations with the median of that tsfresh feature
         tsfresh_features_imputed = impute(tsfresh_features.reindex(pd.RangeIndex(X_df["id"].max() + 1)))
         return tsfresh_features_imputed, X_df
 
-    def _filter_features(self, tsfresh_features, mode="transform", transform_thresholds=None):
-        if self.expansion_threshold < self.min_settings_card:
-            raise ValueError(
-                f"Provided filter threshold(s) (= {self.expansion_threshold}) can not be smaller than "
-                f"number of features generated by minimal settings (= {self.min_settings_card})"
-            )
-        filter_order = np.arange(self.min_settings_card, tsfresh_features.shape[1])
+    def _apply_feature_threshold(self, settings):
+        """Accepts a settings dictionary, with all the possible generated features,
+        and filters features if needed until their count matches the given "self.expansion_threshold"
+        (minus minimal features).
+        Does that in a reproducible "random" way, controlled by "self.feature_sampling_seed".
+        Draws Random indexes to be filtered, then iterates over the settings dictionary assigning an index to each value
+         and performs the filtering based on that index.
+        """
+        settings.pop("linear_trend_timewise", None)  # remove these 5 features that need dateTime indexes for sequences
+        max_available_features = self._get_features_count(settings)
+        if self.expansion_threshold >= max_available_features + self.min_settings_card:
+            return  # no need to limit
+
+        filter_order = np.arange(max_available_features)
         random_state = np.random.get_state()
         np.random.seed(self.feature_sampling_seed)
         np.random.shuffle(filter_order)
         np.random.set_state(random_state)
-        survivors = list(range(self.min_settings_card)) + list(
-            filter_order[: self.expansion_threshold - self.min_settings_card]
-        )
-        tsfresh_features = tsfresh_features.iloc[:, survivors]
+        removed_indices = list(filter_order[max(0, self.expansion_threshold - self.min_settings_card) :])
+        removed_indices.sort()
 
-        if mode == "transform":
-            if len(transform_thresholds) != tsfresh_features.shape[0]:
-                raise ValueError(
-                    f"In 'transform' mode transform_thresholds should have number of entries "
-                    f"(= {len(transform_thresholds)}) that corresponds to the number of records "
-                    f"in tsfresh_features (= {tsfresh_features.shape[0]})."
-                )
-            for thrsh_i, thrsh in enumerate(transform_thresholds):
-                tsfresh_features.iloc[thrsh_i, thrsh:] = 0
-        return tsfresh_features
+        feature_idx = 0
+        for k in list(settings.keys()):
+            if isinstance(settings[k], list):
+                survived_list = []
+                # case the value is a list, each list element is counted separately
+                for index, _ in enumerate(settings[k]):
+                    if removed_indices and removed_indices[0] == feature_idx:
+                        del removed_indices[0]
+                    else:
+                        survived_list.append(settings[k][index])
+                    feature_idx += 1
+                # copy the "survived", features to the final list. if no one survived, delete the settings key.
+                if survived_list:
+                    settings[k] = survived_list
+                else:
+                    del settings[k]
+            else:
+                # case the value is None, count it as one feature
+                if removed_indices and removed_indices[0] == feature_idx:
+                    del removed_indices[0]
+                    del settings[k]
+                feature_idx += 1
 
     def _compute_expansion_threshold(self, input_len):
         return int(max(ceil(SEQUENCE_EXPANSION_FACTOR * input_len + 1) + 1, 10))
 
     def _more_tags(self):
         return {"_skip_test": True, "allow_nan": True}
+
+    def _get_features_count(self, settings):
+        return sum([len(v) if isinstance(v, list) else 1 for v in settings.values()])

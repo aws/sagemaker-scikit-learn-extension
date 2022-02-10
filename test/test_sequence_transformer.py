@@ -13,12 +13,15 @@
 
 import numpy as np
 import pytest
-
+import tsfresh
+import sagemaker_sklearn_extension.feature_extraction.sequences
+import importlib
 from sklearn.utils.testing import assert_array_almost_equal
-
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFeatureExtractor
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFlattener
 from sagemaker_sklearn_extension.feature_extraction.sequences import TSFreshFeatureExtractor
+from tsfresh.defaults import N_PROCESSES
+
 
 # To test TSFlattener with and without missing values encoded in different ways
 # with fixed-length inputs
@@ -39,7 +42,11 @@ X_all_nan_column = [
     [",,,"],
     [",,,"],
 ]
-
+X_sequence_5_columns = [
+    ["1, 2", "11, 12", "1, 4", "11, 99", "7, 4"],
+    ["1, 5", "11, 99", "7, 4", "71, 88", "7, 2"],
+    ["1, 33", "11, 88", "1, 2", "1, 7", "11, 99"],
+]
 
 # with variable-length inputs
 X_sequence_varying_length = [["1, 2"], ["11, 111"], ["2, 3, 1, 4"]]
@@ -68,12 +75,15 @@ X_hybrid = np.array([[0, 2, 0], [4, 4, 6], [10, 10, 10]])
 X_all_nan = [[np.nan, np.nan, np.nan, np.nan], [np.nan], [10, 10, 10, 10], [10, 20, 30, 40]]
 X_all_nan_imputed = [[0, 0, 0, 0], [0, 0, 0, 0], [10, 10, 10, 10], [10, 20, 30, 40]]
 # to test that the first tsfresh feature is computed correctly
-X_with_first_feature = np.array([[1, 2, 3, 44, -0.295919], [11, 12, 14, 111, 1.345592], [1, 1, 1, 2, -1.049673]])
+X_with_first_feature = np.array(
+    [[1.0, 2.0, 3.0, 44.0, 50.0], [11.0, 12.0, 14.0, 111.0, 148.0], [1.0, 1.0, 1.0, 2.0, 5.0]]
+)
+
 X_filled_with_first_feature = np.array(
-    [[1.0, 1.0, 3.0, 44.0, -0.236065], [11.0, 12.0, 12.0, 111.0, 1.325594], [0.0, 0.0, 1.0, 0.0, -1.089529]]
+    [[1.0, 1.0, 3.0, 44.0, 48.0], [11.0, 12.0, 12.0, 111.0, 134.0], [0.0, 0.0, 1.0, 0.0, 1.0]]
 )
 X_padded_with_first_feature = np.array(
-    [[1.0, 2.0, 0.0, 0.0, -0.770329], [11.0, 111.0, 0.0, 0.0, 1.41227], [2.0, 3.0, 1.0, 4.0, -0.641941]]
+    [[1.0, 2.0, 0.0, 0.0, 3.0], [11.0, 111.0, 0.0, 0.0, 122.0], [2.0, 3.0, 1.0, 4.0, 10.0]]
 )
 
 
@@ -250,7 +260,85 @@ def test_time_series_expansion_control(sequences_lengths_q25, feats_num):
     assert X_out.shape[1] == feats_num
 
 
+def test_time_series_expansion_control_seed():
+    time_series_feature_extractor = TSFeatureExtractor(
+        extraction_type="efficient", augment=False, sequences_lengths_q25=[5], extraction_seed=27
+    )
+    time_series_feature_extractor.fit(X_sequence)
+    X_out = time_series_feature_extractor.tsfresh_feature_extractors_[0].transform(
+        TSFlattener().transform(enumerate(np.array(X_sequence).T).__next__()[1].reshape(-1, 1))
+    )
+    assert (
+        list(X_out.columns.values).sort()
+        == [
+            "0__sum_values",
+            "0__median",
+            "0__mean",
+            "0__length",
+            "0__standard_deviation",
+            "0__variance",
+            "0__root_mean_square",
+            "0__maximum",
+            "0__minimum",
+            "0__cwt_coefficients__coeff_14__w_5__widths_(2, 5, 10, 20)",
+            '0__fft_coefficient__attr_"imag"__coeff_85',
+            '0__fft_coefficient__attr_"abs"__coeff_19',
+            '0__fft_coefficient__attr_"abs"__coeff_72',
+            '0__fft_coefficient__attr_"angle"__coeff_63',
+            "0__energy_ratio_by_chunks__num_segments_10__segment_focus_4",
+        ].sort()
+    )
+
+
+@pytest.mark.parametrize(
+    "sequences_lengths_q25, expansion_thresholds",
+    [([500, 200, 1000, 2000, 100], [329, 132, 658, 1316, 66]), ([5, 10, 20, 15, 25], [15, 27, 52, 40, 65])],
+)
+def test_time_series_expansion_control_across_columns(sequences_lengths_q25, expansion_thresholds):
+    time_series_feature_extractor = TSFeatureExtractor(
+        extraction_type="efficient", augment=False, sequences_lengths_q25=sequences_lengths_q25
+    )
+    time_series_feature_extractor.fit(X_sequence_5_columns)
+    for i, extractor in enumerate(time_series_feature_extractor.tsfresh_feature_extractors_):
+        assert expansion_thresholds[i] == extractor.expansion_threshold
+
+
+@pytest.mark.parametrize(
+    "settings, expansion_threshold, expected_settings",
+    [
+        ({"k1": None, "k2": ["v1", "v2"], "k3": None}, 1, {"k2": ["v2"]}),
+        ({"k2": ["v1", "v2", "v3"], "k3": None}, 2, {"k2": ["v3"], "k3": None}),
+        ({"k1": None, "k2": ["v1", "v2"], "k3": None}, 15, {"k1": None, "k2": ["v1", "v2"], "k3": None}),
+    ],
+)
+def test_apply_feature_threshold(settings, expansion_threshold, expected_settings):
+    time_series_feature_extractor = TSFreshFeatureExtractor(expansion_threshold=expansion_threshold)
+    time_series_feature_extractor.min_settings_card = 0
+    time_series_feature_extractor._apply_feature_threshold(settings)
+    assert settings == expected_settings
+
+
 def test_time_series_all_nan_column():
     time_series_feature_extractor = TSFeatureExtractor(extraction_type="efficient", augment=False)
     X_out = time_series_feature_extractor.fit_transform(X_all_nan_column)
     assert X_out.shape[0] == 4
+
+
+@pytest.mark.parametrize(
+    "env, n_jobs",
+    [
+        (["SAGEMAKER_PROGRAM", "sagemaker_serve"], 0),
+        (["SAGEMAKER_PROGRAM", "train"], N_PROCESSES),
+        (["key", "value"], N_PROCESSES),
+    ],
+)
+def test_tsfresh_extractor_njobs_is_ncpus_when_non_sagemaker_serve_env(monkeypatch, env, n_jobs):
+    monkeypatch.setenv(env[0], env[1])
+
+    def mocked_extract(*args, **kwargs):
+        assert (kwargs["n_jobs"]) == n_jobs
+        return tsfresh.extract_features(*args, **kwargs)
+
+    importlib.reload(sagemaker_sklearn_extension.feature_extraction.sequences)
+    monkeypatch.setattr("sagemaker_sklearn_extension.feature_extraction.sequences.extract_features", mocked_extract)
+    TSFeatureExtractor(extraction_type="efficient", augment=False).fit_transform(X_sequence)
