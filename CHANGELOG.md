@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.5.0 (2022-02-17)
+
+### Features
+
+ * Similarity encoding
+
+### Bug fixes and other changes
+
+ * Merge pull request #40 from GiannisMitr/tsfresh_extractor_speedups
+ * apply feature thresholds before extracting features & add cap in total generated features.
+ * remove RobustScaler from TSFreshExtractor.
+ * enable parallelism in TSFeature extraction, excluding "sagemaker_serve" executions
+ * Merge pull request #39 from zkarnin/sim_encode
+ * Fixing broken dependency in tsfresh
+
 ## v2.4.0 (2021-09-23)
 
 ### Features
