@@ -15,11 +15,11 @@ import numpy as np
 import scipy.sparse as sp
 
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.feature_extraction.text import VectorizerMixin, TfidfVectorizer
+from sklearn.feature_extraction.text import _VectorizerMixin, TfidfVectorizer
 from sklearn.utils.validation import check_array, check_is_fitted
 
 
-class MultiColumnTfidfVectorizer(BaseEstimator, VectorizerMixin, TransformerMixin):
+class MultiColumnTfidfVectorizer(BaseEstimator, _VectorizerMixin, TransformerMixin):
     """Applies ``sklearn.feature_extraction.text.TfidfVectorizer`` to each column in an array.
 
     Each column of text is treated separately with a unique TfidfVectorizer. The vectorizers are applied sequentially.
